@@ -4342,6 +4342,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: eventCategory
+          in: query
+          description: Only return event subscriptions for event registry events with the given event category
+          required: false
+          schema:
+            type: string
         - name: eventName
           in: query
           description: Only return event subscriptions with the given event name

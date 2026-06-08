@@ -1,0 +1,490 @@
+diff --git a/docs/public-api/references/openapi/process/flowable-oas-process.yaml b/docs/public-api/references/openapi/process/flowable-oas-process.yaml
+index b939024580..979bfcf3a6 100644
+--- a/docs/public-api/references/openapi/process/flowable-oas-process.yaml
++++ b/docs/public-api/references/openapi/process/flowable-oas-process.yaml
+@@ -4342,6 +4342,12 @@ paths:
+           required: false
+           schema:
+             type: string
++        - name: eventCategory
++          in: query
++          description: Only return event subscriptions for event registry events with the given event category
++          required: false
++          schema:
++            type: string
+         - name: eventName
+           in: query
+           description: Only return event subscriptions with the given event name
+diff --git a/docs/public-api/references/swagger/process/flowable-swagger-process.yaml b/docs/public-api/references/swagger/process/flowable-swagger-process.yaml
+index 06a684ccb4..2ee6dca47e 100644
+--- a/docs/public-api/references/swagger/process/flowable-swagger-process.yaml
++++ b/docs/public-api/references/swagger/process/flowable-swagger-process.yaml
+@@ -4468,6 +4468,11 @@ paths:
+         description: "Only return event subscriptions with the given event type"
+         required: false
+         type: "string"
++      - name: "eventCategory"
++        in: "query"
++        description: "Only return event subscriptions for event registry events with the given event category"
++        required: false
++        type: "string"
+       - name: "eventName"
+         in: "query"
+         description: "Only return event subscriptions with the given event name"
+diff --git a/modules/flowable-cmmn-engine/src/test/java/org/flowable/cmmn/test/eventregistry/DynamicCaseStartEventRegistryDeploymentTest.java b/modules/flowable-cmmn-engine/src/test/java/org/flowable/cmmn/test/eventregistry/DynamicCaseStartEventRegistryDeploymentTest.java
+index 815d5bc10c..a670b36a92 100644
+--- a/modules/flowable-cmmn-engine/src/test/java/org/flowable/cmmn/test/eventregistry/DynamicCaseStartEventRegistryDeploymentTest.java
++++ b/modules/flowable-cmmn-engine/src/test/java/org/flowable/cmmn/test/eventregistry/DynamicCaseStartEventRegistryDeploymentTest.java
+@@ -792,6 +792,30 @@ public class DynamicCaseStartEventRegistryDeploymentTest extends FlowableEventRe
+         }
+     }
+ 
++    @Test
++    @CmmnDeployment(resources = {
++            "org/flowable/cmmn/test/eventregistry/DynamicCaseStartEventRegistryDeploymentTest.eventRegistryDynamicStartTestCase.cmmn"
++    })
++    public void testQueryEventSubscriptionsByEventCategory() {
++        EventRepositoryService eventRepositoryService = getEventRepositoryService();
++        eventRepositoryService.createEventDefinitionQuery()
++                .eventDefinitionKey("simpleTest")
++                .list()
++                .forEach(eventDefinition -> eventRepositoryService.setEventDefinitionCategory(eventDefinition.getId(), "customer-events"));
++
++        cmmnRuntimeService.createCaseInstanceStartEventSubscriptionBuilder()
++                .caseDefinitionKey("eventRegistryDynamicStartTestCase")
++                .addCorrelationParameterValue("customer", "kermit")
++                .addCorrelationParameterValue("action", "start")
++                .subscribe();
++
++        assertThat(cmmnRuntimeService.createEventSubscriptionQuery().eventCategory("customer-events").list())
++                .extracting(EventSubscription::getEventType)
++                .containsExactly("simpleTest");
++
++        assertThat(cmmnRuntimeService.createEventSubscriptionQuery().eventCategory("other-events").count()).isZero();
++    }
++
+     protected CaseInstance sendEvent(String customerId, String action) {
+         CaseInstance caseInstance = cmmnRuntimeService.createCaseInstanceBuilder()
+             .caseDefinitionKey("sendTestEventCase")
+diff --git a/modules/flowable-cmmn-rest/src/main/java/org/flowable/cmmn/rest/service/api/runtime/caze/EventSubscriptionCollectionResource.java b/modules/flowable-cmmn-rest/src/main/java/org/flowable/cmmn/rest/service/api/runtime/caze/EventSubscriptionCollectionResource.java
+index b386e0349a..4d46d6be41 100644
+--- a/modules/flowable-cmmn-rest/src/main/java/org/flowable/cmmn/rest/service/api/runtime/caze/EventSubscriptionCollectionResource.java
++++ b/modules/flowable-cmmn-rest/src/main/java/org/flowable/cmmn/rest/service/api/runtime/caze/EventSubscriptionCollectionResource.java
+@@ -57,6 +57,7 @@ public class EventSubscriptionCollectionResource {
+     @ApiImplicitParams({
+             @ApiImplicitParam(name = "id", dataType = "string", value = "Only return event subscriptions with the given id", paramType = "query"),
+             @ApiImplicitParam(name = "eventType", dataType = "string", value = "Only return event subscriptions with the given event type", paramType = "query"),
++            @ApiImplicitParam(name = "eventCategory", dataType = "string", value = "Only return event subscriptions for event registry events with the given event category", paramType = "query"),
+             @ApiImplicitParam(name = "eventName", dataType = "string", value = "Only return event subscriptions with the given event name", paramType = "query"),
+             @ApiImplicitParam(name = "activityId", dataType = "string", value = "Only return event subscriptions with the given activity id", paramType = "query"),
+             @ApiImplicitParam(name = "caseInstanceId", dataType = "string", value = "Only return event subscriptions part of a process with the given id", paramType = "query"),
+@@ -91,6 +92,9 @@ public class EventSubscriptionCollectionResource {
+         if (allRequestParams.containsKey("eventType")) {
+             query.eventType(allRequestParams.get("eventType"));
+         }
++        if (allRequestParams.containsKey("eventCategory")) {
++            query.eventCategory(allRequestParams.get("eventCategory"));
++        }
+         if (allRequestParams.containsKey("eventName")) {
+             query.eventName(allRequestParams.get("eventName"));
+         }
+diff --git a/modules/flowable-cmmn-rest/src/test/java/org/flowable/cmmn/rest/service/api/runtime/EventSubscriptionResourceTest.java b/modules/flowable-cmmn-rest/src/test/java/org/flowable/cmmn/rest/service/api/runtime/EventSubscriptionResourceTest.java
+index 54c2437086..89a11b0317 100644
+--- a/modules/flowable-cmmn-rest/src/test/java/org/flowable/cmmn/rest/service/api/runtime/EventSubscriptionResourceTest.java
++++ b/modules/flowable-cmmn-rest/src/test/java/org/flowable/cmmn/rest/service/api/runtime/EventSubscriptionResourceTest.java
+@@ -26,8 +26,11 @@ import org.flowable.cmmn.api.runtime.CaseInstance;
+ import org.flowable.cmmn.engine.test.CmmnDeployment;
+ import org.flowable.cmmn.rest.service.BaseSpringRestTestCase;
+ import org.flowable.cmmn.rest.service.api.CmmnRestUrls;
++import org.flowable.eventregistry.api.EventDeployment;
++import org.flowable.eventregistry.api.EventRepositoryService;
+ import org.flowable.eventsubscription.api.EventSubscription;
+ import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
+ 
+ import tools.jackson.databind.JsonNode;
+ 
+@@ -35,6 +38,9 @@ import net.javacrumbs.jsonunit.core.Option;
+ 
+ public class EventSubscriptionResourceTest extends BaseSpringRestTestCase {
+ 
++    @Autowired
++    protected EventRepositoryService eventRepositoryService;
++
+     @Test
+     @CmmnDeployment(resources = { "org/flowable/cmmn/rest/service/api/runtime/signalEventListener.cmmn" })
+     public void testQueryEventSubscriptions() throws Exception {
+@@ -90,6 +96,69 @@ public class EventSubscriptionResourceTest extends BaseSpringRestTestCase {
+         assertResultsPresentInDataResponse(url, eventSubscription.getId());
+     }
+ 
++    @Test
++    public void testQueryEventSubscriptionsByEventCategory() throws Exception {
++        org.flowable.cmmn.api.repository.CmmnDeployment caseDeployment = repositoryService.createDeployment()
++                .addString("eventRegistryDynamicStartTestCase.cmmn", String.join("\n",
++                        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
++                        "<definitions xmlns=\"http://www.omg.org/spec/CMMN/20151109/MODEL\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:flowable=\"http://flowable.org/cmmn\" targetNamespace=\"http://flowable.org/cmmn\">",
++                        "  <case id=\"eventRegistryDynamicStartTestCase\" name=\"Event Registry Dynamic Start Test Case\">",
++                        "    <extensionElements>",
++                        "      <flowable:eventType><![CDATA[simpleTest]]></flowable:eventType>",
++                        "      <flowable:startEventCorrelationConfiguration><![CDATA[manualSubscription]]></flowable:startEventCorrelationConfiguration>",
++                        "      <flowable:eventOutParameter source=\"customer\" target=\"customer\"></flowable:eventOutParameter>",
++                        "      <flowable:eventOutParameter source=\"name\" target=\"name\"></flowable:eventOutParameter>",
++                        "      <flowable:eventOutParameter source=\"action\" target=\"action\"></flowable:eventOutParameter>",
++                        "    </extensionElements>",
++                        "    <casePlanModel id=\"casePlanModel1\" name=\"Case plan model\">",
++                        "      <planItem id=\"planItemTask1\" definitionRef=\"task1\"></planItem>",
++                        "      <humanTask id=\"task1\" name=\"Test Task\" />",
++                        "    </casePlanModel>",
++                        "  </case>",
++                        "</definitions>"))
++                .deploy();
++
++        EventDeployment eventDeployment = eventRepositoryService.createDeployment()
++                .name("SimpleEvent")
++                .addString("simple.event", String.join("\n",
++                        "{",
++                        "  \"key\": \"simpleTest\",",
++                        "  \"name\": \"My event\",",
++                        "  \"correlationParameters\": [",
++                        "    { \"name\": \"customer\", \"type\": \"string\" },",
++                        "    { \"name\": \"action\", \"type\": \"string\" }",
++                        "  ],",
++                        "  \"payload\": [",
++                        "    { \"name\": \"customer\", \"type\": \"string\" },",
++                        "    { \"name\": \"name\", \"type\": \"string\" },",
++                        "    { \"name\": \"action\", \"type\": \"string\" }",
++                        "  ]",
++                        "}"))
++                .deploy();
++
++        try {
++            eventRepositoryService.createEventDefinitionQuery()
++                    .eventDefinitionKey("simpleTest")
++                    .list()
++                    .forEach(eventDefinition -> eventRepositoryService.setEventDefinitionCategory(eventDefinition.getId(), "customer-events"));
++
++            EventSubscription eventSubscription = runtimeService.createCaseInstanceStartEventSubscriptionBuilder()
++                    .caseDefinitionKey("eventRegistryDynamicStartTestCase")
++                    .addCorrelationParameterValue("customer", "kermit")
++                    .addCorrelationParameterValue("action", "start")
++                    .subscribe();
++
++            String url = CmmnRestUrls.createRelativeResourceUrl(CmmnRestUrls.URL_EVENT_SUBSCRIPTION_COLLECTION) + "?eventCategory=customer-events";
++            assertResultsPresentInDataResponse(url, eventSubscription.getId());
++
++            url = CmmnRestUrls.createRelativeResourceUrl(CmmnRestUrls.URL_EVENT_SUBSCRIPTION_COLLECTION) + "?eventCategory=other-events";
++            assertEmptyResultsPresentInDataResponse(url);
++        } finally {
++            repositoryService.deleteDeployment(caseDeployment.getId());
++            eventRepositoryService.deleteDeployment(eventDeployment.getId());
++        }
++    }
++
+     @Test
+     @CmmnDeployment(resources = { "org/flowable/cmmn/rest/service/api/runtime/signalEventListener.cmmn" })
+     public void testGetEventSubscription() throws Exception {
+diff --git a/modules/flowable-engine/src/test/java/org/flowable/engine/test/eventregistry/DynamicProcessStartEventRegistryDeploymentTest.java b/modules/flowable-engine/src/test/java/org/flowable/engine/test/eventregistry/DynamicProcessStartEventRegistryDeploymentTest.java
+index d23d51b10c..483f5d18e1 100644
+--- a/modules/flowable-engine/src/test/java/org/flowable/engine/test/eventregistry/DynamicProcessStartEventRegistryDeploymentTest.java
++++ b/modules/flowable-engine/src/test/java/org/flowable/engine/test/eventregistry/DynamicProcessStartEventRegistryDeploymentTest.java
+@@ -870,6 +870,32 @@ public class DynamicProcessStartEventRegistryDeploymentTest extends FlowableEven
+         }
+     }
+ 
++    @Test
++    @Deployment(resources = {
++            "org/flowable/engine/test/eventregistry/DynamicProcessStartEventRegistryDeploymentTest.testDynamicEventRegistryProcessStart.bpmn20.xml",
++            "org/flowable/engine/test/eventregistry/DynamicProcessStartEventRegistryDeploymentTest.sendTestEventProcess.bpmn20.xml",
++            "org/flowable/engine/test/eventregistry/SendInternalEventTaskTest.simple.event"
++    })
++    public void testQueryEventSubscriptionsByEventCategory() {
++        EventRepositoryService eventRepositoryService = getEventRepositoryService();
++        eventRepositoryService.createEventDefinitionQuery()
++                .eventDefinitionKey("simpleTest")
++                .list()
++                .forEach(eventDefinition -> eventRepositoryService.setEventDefinitionCategory(eventDefinition.getId(), "customer-events"));
++
++        runtimeService.createProcessInstanceStartEventSubscriptionBuilder()
++                .processDefinitionKey("eventRegistryDynamicStartTestProcess")
++                .addCorrelationParameterValue("customer", "kermit")
++                .addCorrelationParameterValue("action", "start")
++                .subscribe();
++
++        assertThat(runtimeService.createEventSubscriptionQuery().eventCategory("customer-events").list())
++                .extracting(EventSubscription::getEventType)
++                .containsExactly("simpleTest");
++
++        assertThat(runtimeService.createEventSubscriptionQuery().eventCategory("other-events").count()).isZero();
++    }
++
+     protected ProcessInstance sendEvent(String customerId, String action) {
+         ProcessInstance processInstance = runtimeService.createProcessInstanceBuilder()
+             .processDefinitionKey("sendTestEventProcess")
+diff --git a/modules/flowable-event-registry-spring/src/test/java/org/flowable/eventregistry/spring/test/kafka/KafkaChannelDefinitionProcessorTest.java b/modules/flowable-event-registry-spring/src/test/java/org/flowable/eventregistry/spring/test/kafka/KafkaChannelDefinitionProcessorTest.java
+index 2e9c3ca43c..626831aeb4 100644
+--- a/modules/flowable-event-registry-spring/src/test/java/org/flowable/eventregistry/spring/test/kafka/KafkaChannelDefinitionProcessorTest.java
++++ b/modules/flowable-event-registry-spring/src/test/java/org/flowable/eventregistry/spring/test/kafka/KafkaChannelDefinitionProcessorTest.java
+@@ -50,6 +50,7 @@ import org.apache.kafka.common.TopicPartitionInfo;
+ import org.apache.kafka.common.errors.TopicExistsException;
+ import org.apache.kafka.common.header.Header;
+ import org.apache.kafka.common.header.internals.RecordHeader;
++import org.flowable.eventregistry.api.EventDefinition;
+ import org.flowable.eventregistry.api.EventDeployment;
+ import org.flowable.eventregistry.api.EventRegistry;
+ import org.flowable.eventregistry.api.EventRegistryEvent;
+@@ -206,6 +207,32 @@ class KafkaChannelDefinitionProcessorTest {
+             );
+     }
+ 
++    @Test
++    void eventDefinitionCategoryCanBeQueriedWhenKafkaInfrastructureIsRunning() throws Exception {
++        createTopic("test-category-customer");
++
++        eventRepositoryService.createInboundChannelModelBuilder()
++            .key("eventDefinitionCategoryCanBeQueriedWhenKafkaInfrastructureIsRunning")
++            .resourceName("customer.channel")
++            .kafkaChannelAdapter("test-category-customer")
++            .eventProcessingPipeline()
++            .jsonDeserializer()
++            .detectEventKeyUsingJsonField("eventKey")
++            .jsonFieldsMapDirectlyToPayload()
++            .deploy();
++
++        eventRepositoryService.createEventModelBuilder()
++            .resourceName("categoryTest.event")
++            .key("categoryTest")
++            .category("customer-events")
++            .payload("name", EventPayloadTypes.STRING)
++            .deploy();
++
++        assertThat(eventRepositoryService.createEventDefinitionQuery().eventCategory("customer-events").list())
++            .extracting(EventDefinition::getKey)
++            .contains("categoryTest");
++    }
++
+     @Test
+     void kafkaTopicIsCorrectlyResolvedFromExpression() throws Exception {
+         createTopic("test-expression-customer");
+diff --git a/modules/flowable-eventsubscription-service-api/src/main/java/org/flowable/eventsubscription/api/EventSubscriptionQuery.java b/modules/flowable-eventsubscription-service-api/src/main/java/org/flowable/eventsubscription/api/EventSubscriptionQuery.java
+index 4ca063cde1..e2fd227668 100644
+--- a/modules/flowable-eventsubscription-service-api/src/main/java/org/flowable/eventsubscription/api/EventSubscriptionQuery.java
++++ b/modules/flowable-eventsubscription-service-api/src/main/java/org/flowable/eventsubscription/api/EventSubscriptionQuery.java
+@@ -30,6 +30,9 @@ public interface EventSubscriptionQuery extends Query<EventSubscriptionQuery, Ev
+     /** Only select event subscriptions with the given type. **/
+     EventSubscriptionQuery eventType(String eventType);
+ 
++    /** Only select event subscriptions for event registry events with the given category. **/
++    EventSubscriptionQuery eventCategory(String eventCategory);
++
+     /** Only select event subscriptions with the given name. **/
+     EventSubscriptionQuery eventName(String eventName);
+ 
+diff --git a/modules/flowable-eventsubscription-service/src/main/java/org/flowable/eventsubscription/service/impl/EventSubscriptionQueryImpl.java b/modules/flowable-eventsubscription-service/src/main/java/org/flowable/eventsubscription/service/impl/EventSubscriptionQueryImpl.java
+index 483d6c13ba..a94da679a1 100644
+--- a/modules/flowable-eventsubscription-service/src/main/java/org/flowable/eventsubscription/service/impl/EventSubscriptionQueryImpl.java
++++ b/modules/flowable-eventsubscription-service/src/main/java/org/flowable/eventsubscription/service/impl/EventSubscriptionQueryImpl.java
+@@ -42,6 +42,7 @@ public class EventSubscriptionQueryImpl extends AbstractQuery<EventSubscriptionQ
+ 
+     protected String id;
+     protected String eventType;
++    protected String eventCategory;
+     protected String eventName;
+     protected String executionId;
+     protected String processInstanceId;
+@@ -113,6 +114,21 @@ public class EventSubscriptionQueryImpl extends AbstractQuery<EventSubscriptionQ
+         return this;
+     }
+ 
++    @Override
++    public EventSubscriptionQuery eventCategory(String eventCategory) {
++        if (eventCategory == null) {
++            throw new FlowableIllegalArgumentException("Provided event category is null");
++        }
++
++        if (inOrStatement) {
++            this.currentOrQueryObject.eventCategory = eventCategory;
++        } else {
++            this.eventCategory = eventCategory;
++        }
++
++        return this;
++    }
++
+     @Override
+     public EventSubscriptionQueryImpl eventName(String eventName) {
+         if (eventName == null) {
+@@ -549,6 +565,10 @@ public class EventSubscriptionQueryImpl extends AbstractQuery<EventSubscriptionQ
+         return eventType;
+     }
+ 
++    public String getEventCategory() {
++        return eventCategory;
++    }
++
+     public String getEventName() {
+         return eventName;
+     }
+diff --git a/modules/flowable-eventsubscription-service/src/main/resources/org/flowable/eventsubscription/service/db/mapping/entity/EventSubscription.xml b/modules/flowable-eventsubscription-service/src/main/resources/org/flowable/eventsubscription/service/db/mapping/entity/EventSubscription.xml
+index e717f42d2d..4ea1bbb198 100644
+--- a/modules/flowable-eventsubscription-service/src/main/resources/org/flowable/eventsubscription/service/db/mapping/entity/EventSubscription.xml
++++ b/modules/flowable-eventsubscription-service/src/main/resources/org/flowable/eventsubscription/service/db/mapping/entity/EventSubscription.xml
+@@ -70,6 +70,18 @@
+       <if test="eventType != null">
+         and RES.EVENT_TYPE_ = #{eventType, jdbcType=NVARCHAR}
+       </if>
++      <if test="eventCategory != null">
++        and exists (
++          select 1
++          from ${prefix}FLW_EVENT_DEFINITION ED
++          where ED.KEY_ = RES.EVENT_TYPE_
++            and ED.CATEGORY_ = #{eventCategory, jdbcType=NVARCHAR}
++            and (
++              (RES.TENANT_ID_ = ED.TENANT_ID_)
++              or ((RES.TENANT_ID_ is null or RES.TENANT_ID_ = '') and (ED.TENANT_ID_ is null or ED.TENANT_ID_ = ''))
++            )
++        )
++      </if>
+       <if test="eventName != null">
+         and RES.EVENT_NAME_ = #{eventName, jdbcType=NVARCHAR}
+       </if>
+@@ -151,6 +163,18 @@
+               <if test="orQueryObject.eventType != null">
+                   or RES.EVENT_TYPE_ = #{orQueryObject.eventType, jdbcType=NVARCHAR}
+               </if>
++              <if test="orQueryObject.eventCategory != null">
++                  or exists (
++                      select 1
++                      from ${prefix}FLW_EVENT_DEFINITION ED
++                      where ED.KEY_ = RES.EVENT_TYPE_
++                        and ED.CATEGORY_ = #{orQueryObject.eventCategory, jdbcType=NVARCHAR}
++                        and (
++                          (RES.TENANT_ID_ = ED.TENANT_ID_)
++                          or ((RES.TENANT_ID_ is null or RES.TENANT_ID_ = '') and (ED.TENANT_ID_ is null or ED.TENANT_ID_ = ''))
++                        )
++                  )
++              </if>
+               <if test="orQueryObject.eventName != null">
+                   or RES.EVENT_NAME_ = #{orQueryObject.eventName, jdbcType=NVARCHAR}
+               </if>
+diff --git a/modules/flowable-rest/src/main/java/org/flowable/rest/service/api/runtime/process/EventSubscriptionCollectionResource.java b/modules/flowable-rest/src/main/java/org/flowable/rest/service/api/runtime/process/EventSubscriptionCollectionResource.java
+index 4c3eefa629..e94f167fbe 100644
+--- a/modules/flowable-rest/src/main/java/org/flowable/rest/service/api/runtime/process/EventSubscriptionCollectionResource.java
++++ b/modules/flowable-rest/src/main/java/org/flowable/rest/service/api/runtime/process/EventSubscriptionCollectionResource.java
+@@ -57,6 +57,7 @@ public class EventSubscriptionCollectionResource {
+     @ApiImplicitParams({
+             @ApiImplicitParam(name = "id", dataType = "string", value = "Only return event subscriptions with the given id", paramType = "query"),
+             @ApiImplicitParam(name = "eventType", dataType = "string", value = "Only return event subscriptions with the given event type", paramType = "query"),
++            @ApiImplicitParam(name = "eventCategory", dataType = "string", value = "Only return event subscriptions for event registry events with the given event category", paramType = "query"),
+             @ApiImplicitParam(name = "eventName", dataType = "string", value = "Only return event subscriptions with the given event name", paramType = "query"),
+             @ApiImplicitParam(name = "activityId", dataType = "string", value = "Only return event subscriptions with the given activity id", paramType = "query"),
+             @ApiImplicitParam(name = "executionId", dataType = "string", value = "Only return event subscriptions with the given execution id", paramType = "query"),
+@@ -93,6 +94,9 @@ public class EventSubscriptionCollectionResource {
+         if (allRequestParams.containsKey("eventType")) {
+             query.eventType(allRequestParams.get("eventType"));
+         }
++        if (allRequestParams.containsKey("eventCategory")) {
++            query.eventCategory(allRequestParams.get("eventCategory"));
++        }
+         if (allRequestParams.containsKey("eventName")) {
+             query.eventName(allRequestParams.get("eventName"));
+         }
+diff --git a/modules/flowable-rest/src/test/java/org/flowable/rest/service/api/runtime/SignalsResourceTest.java b/modules/flowable-rest/src/test/java/org/flowable/rest/service/api/runtime/SignalsResourceTest.java
+index 068298d180..81bb9dbd83 100644
+--- a/modules/flowable-rest/src/test/java/org/flowable/rest/service/api/runtime/SignalsResourceTest.java
++++ b/modules/flowable-rest/src/test/java/org/flowable/rest/service/api/runtime/SignalsResourceTest.java
+@@ -26,11 +26,14 @@ import org.apache.http.client.methods.HttpPost;
+ import org.apache.http.entity.StringEntity;
+ import org.flowable.engine.repository.ProcessDefinition;
+ import org.flowable.engine.test.Deployment;
++import org.flowable.eventregistry.api.EventDeployment;
++import org.flowable.eventregistry.api.EventRepositoryService;
+ import org.flowable.eventsubscription.api.EventSubscription;
+ import org.flowable.job.api.Job;
+ import org.flowable.rest.service.BaseSpringRestTestCase;
+ import org.flowable.rest.service.api.RestUrls;
+ import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
+ 
+ import tools.jackson.databind.JsonNode;
+ import tools.jackson.databind.node.ArrayNode;
+@@ -43,6 +46,9 @@ import net.javacrumbs.jsonunit.core.Option;
+  */
+ public class SignalsResourceTest extends BaseSpringRestTestCase {
+ 
++    @Autowired
++    protected EventRepositoryService eventRepositoryService;
++
+     @Test
+     @Deployment(resources = { "org/flowable/rest/service/api/runtime/SignalsResourceTest.process-signal-start.bpmn20.xml" })
+     public void testSignalEventReceivedSync() throws Exception {
+@@ -209,6 +215,69 @@ public class SignalsResourceTest extends BaseSpringRestTestCase {
+         assertResultsPresentInDataResponse(url, eventSubscription.getId());
+     }
+ 
++    @Test
++    public void testQueryEventSubscriptionsByEventCategory() throws Exception {
++        org.flowable.engine.repository.Deployment processDeployment = repositoryService.createDeployment()
++                .addString("eventRegistryDynamicStartTestProcess.bpmn20.xml", String.join("\n",
++                        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
++                        "<definitions xmlns=\"http://www.omg.org/spec/BPMN/20100524/MODEL\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:flowable=\"http://flowable.org/bpmn\" targetNamespace=\"http://flowable.org/test\">",
++                        "  <process id=\"eventRegistryDynamicStartTestProcess\" name=\"Event Registry Dynamic Start Test Process\" isExecutable=\"true\">",
++                        "    <startEvent id=\"bpmnStartEvent_1\" isInterrupting=\"false\">",
++                        "      <extensionElements>",
++                        "        <flowable:eventType><![CDATA[simpleTest]]></flowable:eventType>",
++                        "        <flowable:startEventCorrelationConfiguration><![CDATA[manualSubscription]]></flowable:startEventCorrelationConfiguration>",
++                        "        <flowable:eventOutParameter source=\"customer\" target=\"customer\"></flowable:eventOutParameter>",
++                        "        <flowable:eventOutParameter source=\"name\" target=\"name\"></flowable:eventOutParameter>",
++                        "        <flowable:eventOutParameter source=\"action\" target=\"action\"></flowable:eventOutParameter>",
++                        "      </extensionElements>",
++                        "    </startEvent>",
++                        "    <userTask id=\"task1\" name=\"Test Task\" />",
++                        "    <sequenceFlow id=\"flow1\" sourceRef=\"bpmnStartEvent_1\" targetRef=\"task1\" />",
++                        "  </process>",
++                        "</definitions>"))
++                .deploy();
++
++        EventDeployment eventDeployment = eventRepositoryService.createDeployment()
++                .name("SimpleEvent")
++                .addString("simple.event", String.join("\n",
++                        "{",
++                        "  \"key\": \"simpleTest\",",
++                        "  \"name\": \"My event\",",
++                        "  \"correlationParameters\": [",
++                        "    { \"name\": \"customer\", \"type\": \"string\" },",
++                        "    { \"name\": \"action\", \"type\": \"string\" }",
++                        "  ],",
++                        "  \"payload\": [",
++                        "    { \"name\": \"customer\", \"type\": \"string\" },",
++                        "    { \"name\": \"name\", \"type\": \"string\" },",
++                        "    { \"name\": \"action\", \"type\": \"string\" }",
++                        "  ]",
++                        "}"))
++                .deploy();
++
++        try {
++            eventRepositoryService.createEventDefinitionQuery()
++                    .eventDefinitionKey("simpleTest")
++                    .list()
++                    .forEach(eventDefinition -> eventRepositoryService.setEventDefinitionCategory(eventDefinition.getId(), "customer-events"));
++
++            EventSubscription eventSubscription = runtimeService.createProcessInstanceStartEventSubscriptionBuilder()
++                    .processDefinitionKey("eventRegistryDynamicStartTestProcess")
++                    .addCorrelationParameterValue("customer", "kermit")
++                    .addCorrelationParameterValue("action", "start")
++                    .subscribe();
++
++            String url = RestUrls.createRelativeResourceUrl(RestUrls.URL_EVENT_SUBSCRIPTION_COLLECTION) + "?eventCategory=customer-events";
++            assertResultsPresentInDataResponse(url, eventSubscription.getId());
++
++            url = RestUrls.createRelativeResourceUrl(RestUrls.URL_EVENT_SUBSCRIPTION_COLLECTION) + "?eventCategory=other-events";
++            assertEmptyResultsPresentInDataResponse(url);
++        } finally {
++            repositoryService.deleteDeployment(processDeployment.getId(), true);
++            eventRepositoryService.deleteDeployment(eventDeployment.getId());
++        }
++    }
++
+     @Test
+     @Deployment(resources = { "org/flowable/rest/service/api/runtime/SignalsResourceTest.process-signal-start.bpmn20.xml" }, tenantId = "acme")
+     public void testGetEventSubscription() throws Exception {

@@ -57,6 +57,7 @@ public class EventSubscriptionCollectionResource {
     @ApiImplicitParams({
             @ApiImplicitParam(name = "id", dataType = "string", value = "Only return event subscriptions with the given id", paramType = "query"),
             @ApiImplicitParam(name = "eventType", dataType = "string", value = "Only return event subscriptions with the given event type", paramType = "query"),
+            @ApiImplicitParam(name = "eventCategory", dataType = "string", value = "Only return event subscriptions for event registry events with the given event category", paramType = "query"),
             @ApiImplicitParam(name = "eventName", dataType = "string", value = "Only return event subscriptions with the given event name", paramType = "query"),
             @ApiImplicitParam(name = "activityId", dataType = "string", value = "Only return event subscriptions with the given activity id", paramType = "query"),
             @ApiImplicitParam(name = "caseInstanceId", dataType = "string", value = "Only return event subscriptions part of a process with the given id", paramType = "query"),
@@ -90,6 +91,9 @@ public class EventSubscriptionCollectionResource {
         }
         if (allRequestParams.containsKey("eventType")) {
             query.eventType(allRequestParams.get("eventType"));
+        }
+        if (allRequestParams.containsKey("eventCategory")) {
+            query.eventCategory(allRequestParams.get("eventCategory"));
         }
         if (allRequestParams.containsKey("eventName")) {
             query.eventName(allRequestParams.get("eventName"));

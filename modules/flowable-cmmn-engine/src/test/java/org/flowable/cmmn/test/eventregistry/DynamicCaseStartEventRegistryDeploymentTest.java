@@ -792,6 +792,30 @@ public class DynamicCaseStartEventRegistryDeploymentTest extends FlowableEventRe
         }
     }
 
+    @Test
+    @CmmnDeployment(resources = {
+            "org/flowable/cmmn/test/eventregistry/DynamicCaseStartEventRegistryDeploymentTest.eventRegistryDynamicStartTestCase.cmmn"
+    })
+    public void testQueryEventSubscriptionsByEventCategory() {
+        EventRepositoryService eventRepositoryService = getEventRepositoryService();
+        eventRepositoryService.createEventDefinitionQuery()
+                .eventDefinitionKey("simpleTest")
+                .list()
+                .forEach(eventDefinition -> eventRepositoryService.setEventDefinitionCategory(eventDefinition.getId(), "customer-events"));
+
+        cmmnRuntimeService.createCaseInstanceStartEventSubscriptionBuilder()
+                .caseDefinitionKey("eventRegistryDynamicStartTestCase")
+                .addCorrelationParameterValue("customer", "kermit")
+                .addCorrelationParameterValue("action", "start")
+                .subscribe();
+
+        assertThat(cmmnRuntimeService.createEventSubscriptionQuery().eventCategory("customer-events").list())
+                .extracting(EventSubscription::getEventType)
+                .containsExactly("simpleTest");
+
+        assertThat(cmmnRuntimeService.createEventSubscriptionQuery().eventCategory("other-events").count()).isZero();
+    }
+
     protected CaseInstance sendEvent(String customerId, String action) {
         CaseInstance caseInstance = cmmnRuntimeService.createCaseInstanceBuilder()
             .caseDefinitionKey("sendTestEventCase")

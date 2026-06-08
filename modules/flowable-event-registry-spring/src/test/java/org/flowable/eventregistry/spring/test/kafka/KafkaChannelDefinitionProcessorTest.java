@@ -50,6 +50,7 @@ import org.apache.kafka.common.TopicPartitionInfo;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
+import org.flowable.eventregistry.api.EventDefinition;
 import org.flowable.eventregistry.api.EventDeployment;
 import org.flowable.eventregistry.api.EventRegistry;
 import org.flowable.eventregistry.api.EventRegistryEvent;
@@ -204,6 +205,32 @@ class KafkaChannelDefinitionProcessorTest {
             .containsExactlyInAnyOrder(
                 tuple("customer", "kermit")
             );
+    }
+
+    @Test
+    void eventDefinitionCategoryCanBeQueriedWhenKafkaInfrastructureIsRunning() throws Exception {
+        createTopic("test-category-customer");
+
+        eventRepositoryService.createInboundChannelModelBuilder()
+            .key("eventDefinitionCategoryCanBeQueriedWhenKafkaInfrastructureIsRunning")
+            .resourceName("customer.channel")
+            .kafkaChannelAdapter("test-category-customer")
+            .eventProcessingPipeline()
+            .jsonDeserializer()
+            .detectEventKeyUsingJsonField("eventKey")
+            .jsonFieldsMapDirectlyToPayload()
+            .deploy();
+
+        eventRepositoryService.createEventModelBuilder()
+            .resourceName("categoryTest.event")
+            .key("categoryTest")
+            .category("customer-events")
+            .payload("name", EventPayloadTypes.STRING)
+            .deploy();
+
+        assertThat(eventRepositoryService.createEventDefinitionQuery().eventCategory("customer-events").list())
+            .extracting(EventDefinition::getKey)
+            .contains("categoryTest");
     }
 
     @Test

@@ -26,11 +26,14 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.test.Deployment;
+import org.flowable.eventregistry.api.EventDeployment;
+import org.flowable.eventregistry.api.EventRepositoryService;
 import org.flowable.eventsubscription.api.EventSubscription;
 import org.flowable.job.api.Job;
 import org.flowable.rest.service.BaseSpringRestTestCase;
 import org.flowable.rest.service.api.RestUrls;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
@@ -42,6 +45,9 @@ import net.javacrumbs.jsonunit.core.Option;
  * @author Frederik Heremans
  */
 public class SignalsResourceTest extends BaseSpringRestTestCase {
+
+    @Autowired
+    protected EventRepositoryService eventRepositoryService;
 
     @Test
     @Deployment(resources = { "org/flowable/rest/service/api/runtime/SignalsResourceTest.process-signal-start.bpmn20.xml" })
@@ -207,6 +213,69 @@ public class SignalsResourceTest extends BaseSpringRestTestCase {
 
         url = RestUrls.createRelativeResourceUrl(RestUrls.URL_EVENT_SUBSCRIPTION_COLLECTION) + "?createdAfter=" + getISODateString(hourAgo.getTime());
         assertResultsPresentInDataResponse(url, eventSubscription.getId());
+    }
+
+    @Test
+    public void testQueryEventSubscriptionsByEventCategory() throws Exception {
+        org.flowable.engine.repository.Deployment processDeployment = repositoryService.createDeployment()
+                .addString("eventRegistryDynamicStartTestProcess.bpmn20.xml", String.join("\n",
+                        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                        "<definitions xmlns=\"http://www.omg.org/spec/BPMN/20100524/MODEL\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:flowable=\"http://flowable.org/bpmn\" targetNamespace=\"http://flowable.org/test\">",
+                        "  <process id=\"eventRegistryDynamicStartTestProcess\" name=\"Event Registry Dynamic Start Test Process\" isExecutable=\"true\">",
+                        "    <startEvent id=\"bpmnStartEvent_1\" isInterrupting=\"false\">",
+                        "      <extensionElements>",
+                        "        <flowable:eventType><![CDATA[simpleTest]]></flowable:eventType>",
+                        "        <flowable:startEventCorrelationConfiguration><![CDATA[manualSubscription]]></flowable:startEventCorrelationConfiguration>",
+                        "        <flowable:eventOutParameter source=\"customer\" target=\"customer\"></flowable:eventOutParameter>",
+                        "        <flowable:eventOutParameter source=\"name\" target=\"name\"></flowable:eventOutParameter>",
+                        "        <flowable:eventOutParameter source=\"action\" target=\"action\"></flowable:eventOutParameter>",
+                        "      </extensionElements>",
+                        "    </startEvent>",
+                        "    <userTask id=\"task1\" name=\"Test Task\" />",
+                        "    <sequenceFlow id=\"flow1\" sourceRef=\"bpmnStartEvent_1\" targetRef=\"task1\" />",
+                        "  </process>",
+                        "</definitions>"))
+                .deploy();
+
+        EventDeployment eventDeployment = eventRepositoryService.createDeployment()
+                .name("SimpleEvent")
+                .addString("simple.event", String.join("\n",
+                        "{",
+                        "  \"key\": \"simpleTest\",",
+                        "  \"name\": \"My event\",",
+                        "  \"correlationParameters\": [",
+                        "    { \"name\": \"customer\", \"type\": \"string\" },",
+                        "    { \"name\": \"action\", \"type\": \"string\" }",
+                        "  ],",
+                        "  \"payload\": [",
+                        "    { \"name\": \"customer\", \"type\": \"string\" },",
+                        "    { \"name\": \"name\", \"type\": \"string\" },",
+                        "    { \"name\": \"action\", \"type\": \"string\" }",
+                        "  ]",
+                        "}"))
+                .deploy();
+
+        try {
+            eventRepositoryService.createEventDefinitionQuery()
+                    .eventDefinitionKey("simpleTest")
+                    .list()
+                    .forEach(eventDefinition -> eventRepositoryService.setEventDefinitionCategory(eventDefinition.getId(), "customer-events"));
+
+            EventSubscription eventSubscription = runtimeService.createProcessInstanceStartEventSubscriptionBuilder()
+                    .processDefinitionKey("eventRegistryDynamicStartTestProcess")
+                    .addCorrelationParameterValue("customer", "kermit")
+                    .addCorrelationParameterValue("action", "start")
+                    .subscribe();
+
+            String url = RestUrls.createRelativeResourceUrl(RestUrls.URL_EVENT_SUBSCRIPTION_COLLECTION) + "?eventCategory=customer-events";
+            assertResultsPresentInDataResponse(url, eventSubscription.getId());
+
+            url = RestUrls.createRelativeResourceUrl(RestUrls.URL_EVENT_SUBSCRIPTION_COLLECTION) + "?eventCategory=other-events";
+            assertEmptyResultsPresentInDataResponse(url);
+        } finally {
+            repositoryService.deleteDeployment(processDeployment.getId(), true);
+            eventRepositoryService.deleteDeployment(eventDeployment.getId());
+        }
     }
 
     @Test

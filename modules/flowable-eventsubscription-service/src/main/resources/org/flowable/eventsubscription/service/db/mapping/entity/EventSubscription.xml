@@ -70,6 +70,18 @@
       <if test="eventType != null">
         and RES.EVENT_TYPE_ = #{eventType, jdbcType=NVARCHAR}
       </if>
+      <if test="eventCategory != null">
+        and exists (
+          select 1
+          from ${prefix}FLW_EVENT_DEFINITION ED
+          where ED.KEY_ = RES.EVENT_TYPE_
+            and ED.CATEGORY_ = #{eventCategory, jdbcType=NVARCHAR}
+            and (
+              (RES.TENANT_ID_ = ED.TENANT_ID_)
+              or ((RES.TENANT_ID_ is null or RES.TENANT_ID_ = '') and (ED.TENANT_ID_ is null or ED.TENANT_ID_ = ''))
+            )
+        )
+      </if>
       <if test="eventName != null">
         and RES.EVENT_NAME_ = #{eventName, jdbcType=NVARCHAR}
       </if>
@@ -150,6 +162,18 @@
               </if>
               <if test="orQueryObject.eventType != null">
                   or RES.EVENT_TYPE_ = #{orQueryObject.eventType, jdbcType=NVARCHAR}
+              </if>
+              <if test="orQueryObject.eventCategory != null">
+                  or exists (
+                      select 1
+                      from ${prefix}FLW_EVENT_DEFINITION ED
+                      where ED.KEY_ = RES.EVENT_TYPE_
+                        and ED.CATEGORY_ = #{orQueryObject.eventCategory, jdbcType=NVARCHAR}
+                        and (
+                          (RES.TENANT_ID_ = ED.TENANT_ID_)
+                          or ((RES.TENANT_ID_ is null or RES.TENANT_ID_ = '') and (ED.TENANT_ID_ is null or ED.TENANT_ID_ = ''))
+                        )
+                  )
               </if>
               <if test="orQueryObject.eventName != null">
                   or RES.EVENT_NAME_ = #{orQueryObject.eventName, jdbcType=NVARCHAR}

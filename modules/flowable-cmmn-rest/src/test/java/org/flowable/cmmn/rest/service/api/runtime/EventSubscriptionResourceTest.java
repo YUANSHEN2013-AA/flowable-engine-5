@@ -26,14 +26,20 @@ import org.flowable.cmmn.api.runtime.CaseInstance;
 import org.flowable.cmmn.engine.test.CmmnDeployment;
 import org.flowable.cmmn.rest.service.BaseSpringRestTestCase;
 import org.flowable.cmmn.rest.service.api.CmmnRestUrls;
+import org.flowable.eventregistry.api.EventDeployment;
+import org.flowable.eventregistry.api.EventRepositoryService;
 import org.flowable.eventsubscription.api.EventSubscription;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import tools.jackson.databind.JsonNode;
 
 import net.javacrumbs.jsonunit.core.Option;
 
 public class EventSubscriptionResourceTest extends BaseSpringRestTestCase {
+
+    @Autowired
+    protected EventRepositoryService eventRepositoryService;
 
     @Test
     @CmmnDeployment(resources = { "org/flowable/cmmn/rest/service/api/runtime/signalEventListener.cmmn" })
@@ -88,6 +94,69 @@ public class EventSubscriptionResourceTest extends BaseSpringRestTestCase {
 
         url = CmmnRestUrls.createRelativeResourceUrl(CmmnRestUrls.URL_EVENT_SUBSCRIPTION_COLLECTION) + "?createdAfter=" + getISODateString(hourAgo.getTime());
         assertResultsPresentInDataResponse(url, eventSubscription.getId());
+    }
+
+    @Test
+    public void testQueryEventSubscriptionsByEventCategory() throws Exception {
+        org.flowable.cmmn.api.repository.CmmnDeployment caseDeployment = repositoryService.createDeployment()
+                .addString("eventRegistryDynamicStartTestCase.cmmn", String.join("\n",
+                        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                        "<definitions xmlns=\"http://www.omg.org/spec/CMMN/20151109/MODEL\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:flowable=\"http://flowable.org/cmmn\" targetNamespace=\"http://flowable.org/cmmn\">",
+                        "  <case id=\"eventRegistryDynamicStartTestCase\" name=\"Event Registry Dynamic Start Test Case\">",
+                        "    <extensionElements>",
+                        "      <flowable:eventType><![CDATA[simpleTest]]></flowable:eventType>",
+                        "      <flowable:startEventCorrelationConfiguration><![CDATA[manualSubscription]]></flowable:startEventCorrelationConfiguration>",
+                        "      <flowable:eventOutParameter source=\"customer\" target=\"customer\"></flowable:eventOutParameter>",
+                        "      <flowable:eventOutParameter source=\"name\" target=\"name\"></flowable:eventOutParameter>",
+                        "      <flowable:eventOutParameter source=\"action\" target=\"action\"></flowable:eventOutParameter>",
+                        "    </extensionElements>",
+                        "    <casePlanModel id=\"casePlanModel1\" name=\"Case plan model\">",
+                        "      <planItem id=\"planItemTask1\" definitionRef=\"task1\"></planItem>",
+                        "      <humanTask id=\"task1\" name=\"Test Task\" />",
+                        "    </casePlanModel>",
+                        "  </case>",
+                        "</definitions>"))
+                .deploy();
+
+        EventDeployment eventDeployment = eventRepositoryService.createDeployment()
+                .name("SimpleEvent")
+                .addString("simple.event", String.join("\n",
+                        "{",
+                        "  \"key\": \"simpleTest\",",
+                        "  \"name\": \"My event\",",
+                        "  \"correlationParameters\": [",
+                        "    { \"name\": \"customer\", \"type\": \"string\" },",
+                        "    { \"name\": \"action\", \"type\": \"string\" }",
+                        "  ],",
+                        "  \"payload\": [",
+                        "    { \"name\": \"customer\", \"type\": \"string\" },",
+                        "    { \"name\": \"name\", \"type\": \"string\" },",
+                        "    { \"name\": \"action\", \"type\": \"string\" }",
+                        "  ]",
+                        "}"))
+                .deploy();
+
+        try {
+            eventRepositoryService.createEventDefinitionQuery()
+                    .eventDefinitionKey("simpleTest")
+                    .list()
+                    .forEach(eventDefinition -> eventRepositoryService.setEventDefinitionCategory(eventDefinition.getId(), "customer-events"));
+
+            EventSubscription eventSubscription = runtimeService.createCaseInstanceStartEventSubscriptionBuilder()
+                    .caseDefinitionKey("eventRegistryDynamicStartTestCase")
+                    .addCorrelationParameterValue("customer", "kermit")
+                    .addCorrelationParameterValue("action", "start")
+                    .subscribe();
+
+            String url = CmmnRestUrls.createRelativeResourceUrl(CmmnRestUrls.URL_EVENT_SUBSCRIPTION_COLLECTION) + "?eventCategory=customer-events";
+            assertResultsPresentInDataResponse(url, eventSubscription.getId());
+
+            url = CmmnRestUrls.createRelativeResourceUrl(CmmnRestUrls.URL_EVENT_SUBSCRIPTION_COLLECTION) + "?eventCategory=other-events";
+            assertEmptyResultsPresentInDataResponse(url);
+        } finally {
+            repositoryService.deleteDeployment(caseDeployment.getId());
+            eventRepositoryService.deleteDeployment(eventDeployment.getId());
+        }
     }
 
     @Test

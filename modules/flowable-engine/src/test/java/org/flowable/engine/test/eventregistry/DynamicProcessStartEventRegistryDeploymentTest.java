@@ -870,6 +870,32 @@ public class DynamicProcessStartEventRegistryDeploymentTest extends FlowableEven
         }
     }
 
+    @Test
+    @Deployment(resources = {
+            "org/flowable/engine/test/eventregistry/DynamicProcessStartEventRegistryDeploymentTest.testDynamicEventRegistryProcessStart.bpmn20.xml",
+            "org/flowable/engine/test/eventregistry/DynamicProcessStartEventRegistryDeploymentTest.sendTestEventProcess.bpmn20.xml",
+            "org/flowable/engine/test/eventregistry/SendInternalEventTaskTest.simple.event"
+    })
+    public void testQueryEventSubscriptionsByEventCategory() {
+        EventRepositoryService eventRepositoryService = getEventRepositoryService();
+        eventRepositoryService.createEventDefinitionQuery()
+                .eventDefinitionKey("simpleTest")
+                .list()
+                .forEach(eventDefinition -> eventRepositoryService.setEventDefinitionCategory(eventDefinition.getId(), "customer-events"));
+
+        runtimeService.createProcessInstanceStartEventSubscriptionBuilder()
+                .processDefinitionKey("eventRegistryDynamicStartTestProcess")
+                .addCorrelationParameterValue("customer", "kermit")
+                .addCorrelationParameterValue("action", "start")
+                .subscribe();
+
+        assertThat(runtimeService.createEventSubscriptionQuery().eventCategory("customer-events").list())
+                .extracting(EventSubscription::getEventType)
+                .containsExactly("simpleTest");
+
+        assertThat(runtimeService.createEventSubscriptionQuery().eventCategory("other-events").count()).isZero();
+    }
+
     protected ProcessInstance sendEvent(String customerId, String action) {
         ProcessInstance processInstance = runtimeService.createProcessInstanceBuilder()
             .processDefinitionKey("sendTestEventProcess")

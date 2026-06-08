@@ -42,6 +42,7 @@ public class EventSubscriptionQueryImpl extends AbstractQuery<EventSubscriptionQ
 
     protected String id;
     protected String eventType;
+    protected String eventCategory;
     protected String eventName;
     protected String executionId;
     protected String processInstanceId;
@@ -108,6 +109,21 @@ public class EventSubscriptionQueryImpl extends AbstractQuery<EventSubscriptionQ
             this.currentOrQueryObject.eventType = eventType;
         } else {
             this.eventType = eventType;
+        }
+
+        return this;
+    }
+
+    @Override
+    public EventSubscriptionQuery eventCategory(String eventCategory) {
+        if (eventCategory == null) {
+            throw new FlowableIllegalArgumentException("Provided event category is null");
+        }
+
+        if (inOrStatement) {
+            this.currentOrQueryObject.eventCategory = eventCategory;
+        } else {
+            this.eventCategory = eventCategory;
         }
 
         return this;
@@ -547,6 +563,10 @@ public class EventSubscriptionQueryImpl extends AbstractQuery<EventSubscriptionQ
 
     public String getEventType() {
         return eventType;
+    }
+
+    public String getEventCategory() {
+        return eventCategory;
     }
 
     public String getEventName() {

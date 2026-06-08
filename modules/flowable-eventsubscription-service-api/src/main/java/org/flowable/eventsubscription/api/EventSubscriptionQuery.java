@@ -30,6 +30,9 @@ public interface EventSubscriptionQuery extends Query<EventSubscriptionQuery, Ev
     /** Only select event subscriptions with the given type. **/
     EventSubscriptionQuery eventType(String eventType);
 
+    /** Only select event subscriptions for event registry events with the given category. **/
+    EventSubscriptionQuery eventCategory(String eventCategory);
+
     /** Only select event subscriptions with the given name. **/
     EventSubscriptionQuery eventName(String eventName);
 

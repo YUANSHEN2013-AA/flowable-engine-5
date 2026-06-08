@@ -4468,6 +4468,11 @@ paths:
         description: "Only return event subscriptions with the given event type"
         required: false
         type: "string"
+      - name: "eventCategory"
+        in: "query"
+        description: "Only return event subscriptions for event registry events with the given event category"
+        required: false
+        type: "string"
       - name: "eventName"
         in: "query"
         description: "Only return event subscriptions with the given event name"
