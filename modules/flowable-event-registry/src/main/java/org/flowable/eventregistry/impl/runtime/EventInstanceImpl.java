@@ -26,6 +26,7 @@ import org.flowable.eventregistry.impl.EventRegistryEngineConfiguration;
 public class EventInstanceImpl implements EventInstance {
 
     protected String eventKey;
+    protected String eventCategory;
     protected Collection<EventPayloadInstance> payloadInstances;
     protected Collection<EventPayloadInstance> headerInstances;
     protected Collection<EventPayloadInstance> correlationPayloadInstances;
@@ -54,6 +55,15 @@ public class EventInstanceImpl implements EventInstance {
 
     public void setEventKey(String eventKey) {
         this.eventKey = eventKey;
+    }
+
+    @Override
+    public String getEventCategory() {
+        return eventCategory;
+    }
+
+    public void setEventCategory(String eventCategory) {
+        this.eventCategory = eventCategory;
     }
 
     @Override

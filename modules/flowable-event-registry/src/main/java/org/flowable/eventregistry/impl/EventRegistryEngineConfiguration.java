@@ -75,15 +75,19 @@ import org.flowable.eventregistry.impl.persistence.entity.EventDefinitionEntityM
 import org.flowable.eventregistry.impl.persistence.entity.EventDefinitionEntityManagerImpl;
 import org.flowable.eventregistry.impl.persistence.entity.EventDeploymentEntityManager;
 import org.flowable.eventregistry.impl.persistence.entity.EventDeploymentEntityManagerImpl;
+import org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityManager;
+import org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityManagerImpl;
 import org.flowable.eventregistry.impl.persistence.entity.EventResourceEntityManager;
 import org.flowable.eventregistry.impl.persistence.entity.EventResourceEntityManagerImpl;
 import org.flowable.eventregistry.impl.persistence.entity.data.ChannelDefinitionDataManager;
 import org.flowable.eventregistry.impl.persistence.entity.data.EventDefinitionDataManager;
 import org.flowable.eventregistry.impl.persistence.entity.data.EventDeploymentDataManager;
+import org.flowable.eventregistry.impl.persistence.entity.data.EventInstanceDataManager;
 import org.flowable.eventregistry.impl.persistence.entity.data.EventResourceDataManager;
 import org.flowable.eventregistry.impl.persistence.entity.data.impl.MybatisChannelDefinitionDataManager;
 import org.flowable.eventregistry.impl.persistence.entity.data.impl.MybatisEventDefinitionDataManager;
 import org.flowable.eventregistry.impl.persistence.entity.data.impl.MybatisEventDeploymentDataManager;
+import org.flowable.eventregistry.impl.persistence.entity.data.impl.MybatisEventInstanceDataManager;
 import org.flowable.eventregistry.impl.persistence.entity.data.impl.MybatisEventResourceDataManager;
 import org.flowable.eventregistry.impl.pipeline.DelegateExpressionInboundChannelModelProcessor;
 import org.flowable.eventregistry.impl.pipeline.DelegateExpressionOutboundChannelModelProcessor;
@@ -113,12 +117,14 @@ public class EventRegistryEngineConfiguration extends AbstractBuildableEngineCon
     protected EventDefinitionDataManager eventDefinitionDataManager;
     protected ChannelDefinitionDataManager channelDefinitionDataManager;
     protected EventResourceDataManager resourceDataManager;
+    protected EventInstanceDataManager eventInstanceDataManager;
 
     // ENTITY MANAGERS /////////////////////////////////////////////////
     protected EventDeploymentEntityManager deploymentEntityManager;
     protected EventDefinitionEntityManager eventDefinitionEntityManager;
     protected ChannelDefinitionEntityManager channelDefinitionEntityManager;
     protected EventResourceEntityManager resourceEntityManager;
+    protected EventInstanceEntityManager eventInstanceEntityManager;
 
     protected ExpressionManager expressionManager;
     protected Collection<Consumer<ExpressionManager>> expressionManagerConfigurers;
@@ -319,6 +325,9 @@ public class EventRegistryEngineConfiguration extends AbstractBuildableEngineCon
         if (resourceDataManager == null) {
             resourceDataManager = new MybatisEventResourceDataManager(this);
         }
+        if (eventInstanceDataManager == null) {
+            eventInstanceDataManager = new MybatisEventInstanceDataManager(this);
+        }
     }
 
     @Override
@@ -335,6 +344,9 @@ public class EventRegistryEngineConfiguration extends AbstractBuildableEngineCon
         }
         if (resourceEntityManager == null) {
             resourceEntityManager = new EventResourceEntityManagerImpl(this, resourceDataManager);
+        }
+        if (eventInstanceEntityManager == null) {
+            eventInstanceEntityManager = new EventInstanceEntityManagerImpl(this, eventInstanceDataManager);
         }
     }
 
@@ -865,6 +877,15 @@ public class EventRegistryEngineConfiguration extends AbstractBuildableEngineCon
         return this;
     }
 
+    public EventInstanceDataManager getEventInstanceDataManager() {
+        return eventInstanceDataManager;
+    }
+
+    public EventRegistryEngineConfiguration setEventInstanceDataManager(EventInstanceDataManager eventInstanceDataManager) {
+        this.eventInstanceDataManager = eventInstanceDataManager;
+        return this;
+    }
+
     public EventDeploymentEntityManager getDeploymentEntityManager() {
         return deploymentEntityManager;
     }
@@ -898,6 +919,15 @@ public class EventRegistryEngineConfiguration extends AbstractBuildableEngineCon
 
     public EventRegistryEngineConfiguration setResourceEntityManager(EventResourceEntityManager resourceEntityManager) {
         this.resourceEntityManager = resourceEntityManager;
+        return this;
+    }
+
+    public EventInstanceEntityManager getEventInstanceEntityManager() {
+        return eventInstanceEntityManager;
+    }
+
+    public EventRegistryEngineConfiguration setEventInstanceEntityManager(EventInstanceEntityManager eventInstanceEntityManager) {
+        this.eventInstanceEntityManager = eventInstanceEntityManager;
         return this;
     }
 

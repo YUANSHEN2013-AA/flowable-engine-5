@@ -20,6 +20,7 @@ import org.flowable.common.engine.impl.cmd.GetTableCountCmd;
 import org.flowable.common.engine.impl.lock.LockManagerImpl;
 import org.flowable.common.engine.impl.service.CommonEngineServiceImpl;
 import org.flowable.eventregistry.api.EventManagementService;
+import org.flowable.eventregistry.api.runtime.EventInstanceQuery;
 import org.flowable.eventregistry.impl.cmd.GetTableNamesCmd;
 
 /**
@@ -49,6 +50,11 @@ public class EventManagementServiceImpl extends CommonEngineServiceImpl<EventReg
     @Override
     public LockManager getLockManager(String lockName) {
         return new LockManagerImpl(commandExecutor, lockName, getConfiguration().getLockPollRate(), configuration.getEngineCfgKey());
+    }
+
+    @Override
+    public EventInstanceQuery createEventInstanceQuery() {
+        return new EventInstanceQueryImpl(commandExecutor);
     }
 
 }

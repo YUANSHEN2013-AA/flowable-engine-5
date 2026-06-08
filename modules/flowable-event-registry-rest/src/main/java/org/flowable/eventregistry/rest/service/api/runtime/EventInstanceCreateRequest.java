@@ -34,6 +34,7 @@ public class EventInstanceCreateRequest {
 
     protected ObjectNode eventPayload;
     protected String tenantId;
+    protected String eventCategory;
 
     @ApiModelProperty(example = "oneEvent:1:158")
     public String getEventDefinitionId() {
@@ -86,6 +87,15 @@ public class EventInstanceCreateRequest {
 
     public void setEventPayload(ObjectNode eventPayload) {
         this.eventPayload = eventPayload;
+    }
+
+    @ApiModelProperty(example = "event-category")
+    public String getEventCategory() {
+        return eventCategory;
+    }
+
+    public void setEventCategory(String eventCategory) {
+        this.eventCategory = eventCategory;
     }
 
     @JsonIgnore

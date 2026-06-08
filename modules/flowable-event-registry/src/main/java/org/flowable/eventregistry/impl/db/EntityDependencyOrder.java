@@ -21,6 +21,7 @@ import org.flowable.common.engine.impl.persistence.entity.PropertyEntityImpl;
 import org.flowable.eventregistry.impl.persistence.entity.ChannelDefinitionEntityImpl;
 import org.flowable.eventregistry.impl.persistence.entity.EventDefinitionEntityImpl;
 import org.flowable.eventregistry.impl.persistence.entity.EventDeploymentEntityImpl;
+import org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityImpl;
 import org.flowable.eventregistry.impl.persistence.entity.EventResourceEntityImpl;
 
 public class EntityDependencyOrder {
@@ -33,6 +34,7 @@ public class EntityDependencyOrder {
         DELETE_ORDER.add(PropertyEntityImpl.class);
         DELETE_ORDER.add(EventResourceEntityImpl.class);
         DELETE_ORDER.add(EventDeploymentEntityImpl.class);
+        DELETE_ORDER.add(EventInstanceEntityImpl.class);
         DELETE_ORDER.add(EventDefinitionEntityImpl.class);
         DELETE_ORDER.add(ChannelDefinitionEntityImpl.class);
         

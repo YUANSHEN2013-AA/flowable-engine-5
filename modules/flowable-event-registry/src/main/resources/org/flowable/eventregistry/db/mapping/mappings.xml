@@ -25,5 +25,6 @@
     <mapper resource="org/flowable/eventregistry/db/mapping/entity/EventDefinition.xml" />
     <mapper resource="org/flowable/eventregistry/db/mapping/entity/ChannelDefinition.xml" />
     <mapper resource="org/flowable/eventregistry/db/mapping/entity/EventResource.xml" />
+    <mapper resource="org/flowable/eventregistry/db/mapping/entity/EventInstance.xml" />
   </mappers>
 </configuration>

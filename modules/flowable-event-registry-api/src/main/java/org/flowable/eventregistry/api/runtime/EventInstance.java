@@ -32,6 +32,8 @@ public interface EventInstance {
 
     String getEventKey();
 
+    String getEventCategory();
+
     Collection<EventPayloadInstance> getPayloadInstances();
     
     Collection<EventPayloadInstance> getHeaderInstances();

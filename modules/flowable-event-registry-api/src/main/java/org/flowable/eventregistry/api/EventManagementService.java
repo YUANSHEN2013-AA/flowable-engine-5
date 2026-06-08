@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.Map;
 
 import org.flowable.common.engine.api.lock.LockManager;
+import org.flowable.eventregistry.api.runtime.EventInstanceQuery;
 
 public interface EventManagementService {
 
@@ -47,4 +48,6 @@ public interface EventManagementService {
      * @return the lock manager for the given lock
      */
     LockManager getLockManager(String lockName);
+
+    EventInstanceQuery createEventInstanceQuery();
 }

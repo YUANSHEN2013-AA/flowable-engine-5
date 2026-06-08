@@ -1,0 +1,104 @@
+<!--
+  Event Registry - Event Instance Search Form with eventCategory filter
+  This component allows users to search event instances by various criteria
+  including the eventCategory field.
+-->
+<div class="event-instance-search" style="padding: 16px;">
+    <h2>查询事件实例</h2>
+    <div class="search-fields">
+        <div class="form-group">
+            <label for="eventKey">事件 Key</label>
+            <input id="eventKey" type="text" placeholder="按事件 Key 过滤" />
+        </div>
+        <div class="form-group">
+            <label for="eventCategory">事件类别 (eventCategory)</label>
+            <input id="eventCategory" type="text" placeholder="按事件类别精确匹配" />
+        </div>
+        <div class="form-group">
+            <label for="eventCategoryLike">事件类别 (模糊)</label>
+            <input id="eventCategoryLike" type="text" placeholder="按事件类别模糊匹配，如 %order%" />
+        </div>
+        <div class="form-group">
+            <label for="eventCategoryNotEquals">排除事件类别</label>
+            <input id="eventCategoryNotEquals" type="text" placeholder="排除指定事件类别" />
+        </div>
+        <div class="form-group">
+            <label for="eventDefinitionKey">事件定义 Key</label>
+            <input id="eventDefinitionKey" type="text" placeholder="按事件定义 Key 过滤" />
+        </div>
+        <div class="form-group">
+            <label for="tenantId">租户 ID</label>
+            <input id="tenantId" type="text" placeholder="按租户 ID 过滤" />
+        </div>
+    </div>
+    <div class="search-actions">
+        <button onclick="searchEventInstances()">查询</button>
+        <button onclick="clearFilters()">清除</button>
+    </div>
+    <div class="search-results">
+        <table id="eventInstanceResults">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>事件 Key</th>
+                    <th>事件类别 (eventCategory)</th>
+                    <th>事件定义 Key</th>
+                    <th>租户 ID</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function searchEventInstances() {
+    var params = {};
+    var eventKey = document.getElementById('eventKey').value;
+    var eventCategory = document.getElementById('eventCategory').value;
+    var eventCategoryLike = document.getElementById('eventCategoryLike').value;
+    var eventCategoryNotEquals = document.getElementById('eventCategoryNotEquals').value;
+    var eventDefinitionKey = document.getElementById('eventDefinitionKey').value;
+    var tenantId = document.getElementById('tenantId').value;
+
+    if (eventKey) params.eventKey = eventKey;
+    if (eventCategory) params.eventCategory = eventCategory;
+    if (eventCategoryLike) params.eventCategoryLike = eventCategoryLike;
+    if (eventCategoryNotEquals) params.eventCategoryNotEquals = eventCategoryNotEquals;
+    if (eventDefinitionKey) params.eventDefinitionKey = eventDefinitionKey;
+    if (tenantId) params.tenantId = tenantId;
+
+    var queryString = Object.keys(params).map(function(k) {
+        return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }).join('&');
+
+    fetch('/event-registry-runtime/event-instances?' + queryString)
+        .then(function(response) { return response.json(); })
+        .then(function(data) { renderResults(data); })
+        .catch(function(err) { console.error('查询失败', err); });
+}
+
+function renderResults(data) {
+    var tbody = document.querySelector('#eventInstanceResults tbody');
+    tbody.innerHTML = '';
+    data.forEach(function(instance) {
+        var row = '<tr>' +
+            '<td>' + instance.id + '</td>' +
+            '<td>' + instance.eventKey + '</td>' +
+            '<td>' + (instance.eventCategory || '') + '</td>' +
+            '<td>' + (instance.eventDefinitionKey || '') + '</td>' +
+            '<td>' + (instance.tenantId || '') + '</td>' +
+            '</tr>';
+        tbody.innerHTML += row;
+    });
+}
+
+function clearFilters() {
+    document.getElementById('eventKey').value = '';
+    document.getElementById('eventCategory').value = '';
+    document.getElementById('eventCategoryLike').value = '';
+    document.getElementById('eventCategoryNotEquals').value = '';
+    document.getElementById('eventDefinitionKey').value = '';
+    document.getElementById('tenantId').value = '';
+}
+</script>

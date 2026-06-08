@@ -1,0 +1,477 @@
+diff --git a/modules/flowable-event-registry-api/src/main/java/org/flowable/eventregistry/api/EventManagementService.java b/modules/flowable-event-registry-api/src/main/java/org/flowable/eventregistry/api/EventManagementService.java
+index 0536c7c549..a0c3cfdfab 100644
+--- a/modules/flowable-event-registry-api/src/main/java/org/flowable/eventregistry/api/EventManagementService.java
++++ b/modules/flowable-event-registry-api/src/main/java/org/flowable/eventregistry/api/EventManagementService.java
+@@ -16,6 +16,7 @@ import java.util.Collection;
+ import java.util.Map;
+ 
+ import org.flowable.common.engine.api.lock.LockManager;
++import org.flowable.eventregistry.api.runtime.EventInstanceQuery;
+ 
+ public interface EventManagementService {
+ 
+@@ -47,4 +48,6 @@ public interface EventManagementService {
+      * @return the lock manager for the given lock
+      */
+     LockManager getLockManager(String lockName);
++
++    EventInstanceQuery createEventInstanceQuery();
+ }
+diff --git a/modules/flowable-event-registry-api/src/main/java/org/flowable/eventregistry/api/runtime/EventInstance.java b/modules/flowable-event-registry-api/src/main/java/org/flowable/eventregistry/api/runtime/EventInstance.java
+index fb7b635271..73191a5ef1 100644
+--- a/modules/flowable-event-registry-api/src/main/java/org/flowable/eventregistry/api/runtime/EventInstance.java
++++ b/modules/flowable-event-registry-api/src/main/java/org/flowable/eventregistry/api/runtime/EventInstance.java
+@@ -32,6 +32,8 @@ public interface EventInstance {
+ 
+     String getEventKey();
+ 
++    String getEventCategory();
++
+     Collection<EventPayloadInstance> getPayloadInstances();
+     
+     Collection<EventPayloadInstance> getHeaderInstances();
+diff --git a/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/EventRegistryRestApiInterceptor.java b/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/EventRegistryRestApiInterceptor.java
+index ff5f93e4a3..6c2e217b9d 100644
+--- a/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/EventRegistryRestApiInterceptor.java
++++ b/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/EventRegistryRestApiInterceptor.java
+@@ -19,6 +19,7 @@ import org.flowable.eventregistry.api.EventDefinitionQuery;
+ import org.flowable.eventregistry.api.EventDeployment;
+ import org.flowable.eventregistry.api.EventDeploymentBuilder;
+ import org.flowable.eventregistry.api.EventDeploymentQuery;
++import org.flowable.eventregistry.api.runtime.EventInstanceQuery;
+ import org.flowable.eventregistry.rest.service.api.runtime.EventInstanceCreateRequest;
+ 
+ public interface EventRegistryRestApiInterceptor {
+@@ -43,6 +44,8 @@ public interface EventRegistryRestApiInterceptor {
+     
+     void createEventInstance(EventInstanceCreateRequest request);
+     
++    void accessEventInstancesWithQuery(EventInstanceQuery eventInstanceQuery);
++    
+     void accessManagementInfo();
+     
+     void accessTableInfo();
+diff --git a/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/runtime/EventInstanceCollectionResource.java b/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/runtime/EventInstanceCollectionResource.java
+index d04c2f574c..e4e9e735ad 100644
+--- a/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/runtime/EventInstanceCollectionResource.java
++++ b/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/runtime/EventInstanceCollectionResource.java
+@@ -13,14 +13,23 @@
+ 
+ package org.flowable.eventregistry.rest.service.api.runtime;
+ 
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++
++import javax.servlet.http.HttpServletRequest;
++
+ import org.apache.commons.lang3.StringUtils;
+ import org.flowable.common.engine.api.FlowableIllegalArgumentException;
+ import org.flowable.common.engine.api.FlowableObjectNotFoundException;
+ import org.flowable.common.engine.api.scope.ScopeTypes;
+ import org.flowable.eventregistry.api.EventDefinition;
+ import org.flowable.eventregistry.api.EventDefinitionQuery;
++import org.flowable.eventregistry.api.EventManagementService;
+ import org.flowable.eventregistry.api.EventRegistry;
+ import org.flowable.eventregistry.api.EventRepositoryService;
++import org.flowable.eventregistry.api.runtime.EventInstance;
++import org.flowable.eventregistry.api.runtime.EventInstanceQuery;
+ import org.flowable.eventregistry.impl.EventRegistryEngineConfiguration;
+ import org.flowable.eventregistry.model.ChannelModel;
+ import org.flowable.eventregistry.model.InboundChannelModel;
+@@ -28,8 +37,10 @@ import org.flowable.eventregistry.rest.service.api.EventRegistryRestApiIntercept
+ import org.flowable.eventregistry.rest.service.api.EventRegistryRestResponseFactory;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.http.HttpStatus;
++import org.springframework.web.bind.annotation.GetMapping;
+ import org.springframework.web.bind.annotation.PostMapping;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestParam;
+ import org.springframework.web.bind.annotation.ResponseStatus;
+ import org.springframework.web.bind.annotation.RestController;
+ 
+@@ -61,6 +72,9 @@ public class EventInstanceCollectionResource {
+     @Autowired(required=false)
+     protected EventRegistryRestApiInterceptor restApiInterceptor;
+ 
++    @Autowired
++    protected EventManagementService managementService;
++
+     @ApiOperation(value = "Send an event instance", tags = { "Event Instances" },
+             notes = "Only one of *eventDefinitionId* or *eventDefinitionKey* an be used in the request body. \n\n",
+             code = 204)
+@@ -136,4 +150,46 @@ public class EventInstanceCollectionResource {
+             throw new FlowableIllegalArgumentException("Only one of eventDefinitionId or eventDefinitionKey should be set.");
+         }
+     }
++
++    @ApiOperation(value = "List event instances", tags = { "Event Instances" },
++            notes = "Returns a list of event instances matching the given query parameters. Supports filtering by eventCategory.")
++    @GetMapping(value = "/event-registry-runtime/event-instances", produces = "application/json")
++    public List<EventInstance> getEventInstances(@RequestParam Map<String, String> requestParams, HttpServletRequest httpRequest) {
++        EventInstanceQuery query = managementService.createEventInstanceQuery();
++
++        if (requestParams.containsKey("eventInstanceId")) {
++            query.eventInstanceId(requestParams.get("eventInstanceId"));
++        }
++        if (requestParams.containsKey("eventKey")) {
++            query.eventKey(requestParams.get("eventKey"));
++        }
++        if (requestParams.containsKey("eventKeyLike")) {
++            query.eventKeyLike(requestParams.get("eventKeyLike"));
++        }
++        if (requestParams.containsKey("eventDefinitionKey")) {
++            query.eventDefinitionKey(requestParams.get("eventDefinitionKey"));
++        }
++        if (requestParams.containsKey("eventCategory")) {
++            query.eventCategory(requestParams.get("eventCategory"));
++        }
++        if (requestParams.containsKey("eventCategoryLike")) {
++            query.eventCategoryLike(requestParams.get("eventCategoryLike"));
++        }
++        if (requestParams.containsKey("eventCategoryNotEquals")) {
++            query.eventCategoryNotEquals(requestParams.get("eventCategoryNotEquals"));
++        }
++        if (requestParams.containsKey("tenantId")) {
++            query.tenantId(requestParams.get("tenantId"));
++        }
++        if (requestParams.containsKey("tenantIdLike")) {
++            query.tenantIdLike(requestParams.get("tenantIdLike"));
++        }
++
++        if (restApiInterceptor != null) {
++            restApiInterceptor.accessEventInstancesWithQuery(query);
++        }
++
++        return query.list();
++    }
++
+ }
+diff --git a/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/runtime/EventInstanceCreateRequest.java b/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/runtime/EventInstanceCreateRequest.java
+index e6b3f76b90..a75913c182 100644
+--- a/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/runtime/EventInstanceCreateRequest.java
++++ b/modules/flowable-event-registry-rest/src/main/java/org/flowable/eventregistry/rest/service/api/runtime/EventInstanceCreateRequest.java
+@@ -34,6 +34,7 @@ public class EventInstanceCreateRequest {
+ 
+     protected ObjectNode eventPayload;
+     protected String tenantId;
++    protected String eventCategory;
+ 
+     @ApiModelProperty(example = "oneEvent:1:158")
+     public String getEventDefinitionId() {
+@@ -88,6 +89,15 @@ public class EventInstanceCreateRequest {
+         this.eventPayload = eventPayload;
+     }
+ 
++    @ApiModelProperty(example = "event-category")
++    public String getEventCategory() {
++        return eventCategory;
++    }
++
++    public void setEventCategory(String eventCategory) {
++        this.eventCategory = eventCategory;
++    }
++
+     @JsonIgnore
+     public boolean isTenantSet() {
+         return tenantId != null && !StringUtils.isEmpty(tenantId);
+diff --git a/modules/flowable-event-registry/pom.xml b/modules/flowable-event-registry/pom.xml
+index 188a253634..1d6913f706 100644
+--- a/modules/flowable-event-registry/pom.xml
++++ b/modules/flowable-event-registry/pom.xml
+@@ -103,6 +103,24 @@
+             <artifactId>HikariCP</artifactId>
+             <scope>test</scope>
+         </dependency>
++        <dependency>
++            <groupId>org.testcontainers</groupId>
++            <artifactId>testcontainers</artifactId>
++            <version>1.19.3</version>
++            <scope>test</scope>
++        </dependency>
++        <dependency>
++            <groupId>org.testcontainers</groupId>
++            <artifactId>postgresql</artifactId>
++            <version>1.19.3</version>
++            <scope>test</scope>
++        </dependency>
++        <dependency>
++            <groupId>org.testcontainers</groupId>
++            <artifactId>junit-jupiter</artifactId>
++            <version>1.19.3</version>
++            <scope>test</scope>
++        </dependency>
+     </dependencies>
+     
+     <properties>
+diff --git a/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/EventManagementServiceImpl.java b/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/EventManagementServiceImpl.java
+index 1271507f75..3cff6a8168 100644
+--- a/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/EventManagementServiceImpl.java
++++ b/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/EventManagementServiceImpl.java
+@@ -20,6 +20,7 @@ import org.flowable.common.engine.impl.cmd.GetTableCountCmd;
+ import org.flowable.common.engine.impl.lock.LockManagerImpl;
+ import org.flowable.common.engine.impl.service.CommonEngineServiceImpl;
+ import org.flowable.eventregistry.api.EventManagementService;
++import org.flowable.eventregistry.api.runtime.EventInstanceQuery;
+ import org.flowable.eventregistry.impl.cmd.GetTableNamesCmd;
+ 
+ /**
+@@ -51,4 +52,9 @@ public class EventManagementServiceImpl extends CommonEngineServiceImpl<EventReg
+         return new LockManagerImpl(commandExecutor, lockName, getConfiguration().getLockPollRate(), configuration.getEngineCfgKey());
+     }
+ 
++    @Override
++    public EventInstanceQuery createEventInstanceQuery() {
++        return new EventInstanceQueryImpl(commandExecutor);
++    }
++
+ }
+diff --git a/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/EventRegistryEngineConfiguration.java b/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/EventRegistryEngineConfiguration.java
+index cc3fa987e0..634d3a4fdf 100755
+--- a/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/EventRegistryEngineConfiguration.java
++++ b/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/EventRegistryEngineConfiguration.java
+@@ -75,15 +75,19 @@ import org.flowable.eventregistry.impl.persistence.entity.EventDefinitionEntityM
+ import org.flowable.eventregistry.impl.persistence.entity.EventDefinitionEntityManagerImpl;
+ import org.flowable.eventregistry.impl.persistence.entity.EventDeploymentEntityManager;
+ import org.flowable.eventregistry.impl.persistence.entity.EventDeploymentEntityManagerImpl;
++import org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityManager;
++import org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityManagerImpl;
+ import org.flowable.eventregistry.impl.persistence.entity.EventResourceEntityManager;
+ import org.flowable.eventregistry.impl.persistence.entity.EventResourceEntityManagerImpl;
+ import org.flowable.eventregistry.impl.persistence.entity.data.ChannelDefinitionDataManager;
+ import org.flowable.eventregistry.impl.persistence.entity.data.EventDefinitionDataManager;
+ import org.flowable.eventregistry.impl.persistence.entity.data.EventDeploymentDataManager;
++import org.flowable.eventregistry.impl.persistence.entity.data.EventInstanceDataManager;
+ import org.flowable.eventregistry.impl.persistence.entity.data.EventResourceDataManager;
+ import org.flowable.eventregistry.impl.persistence.entity.data.impl.MybatisChannelDefinitionDataManager;
+ import org.flowable.eventregistry.impl.persistence.entity.data.impl.MybatisEventDefinitionDataManager;
+ import org.flowable.eventregistry.impl.persistence.entity.data.impl.MybatisEventDeploymentDataManager;
++import org.flowable.eventregistry.impl.persistence.entity.data.impl.MybatisEventInstanceDataManager;
+ import org.flowable.eventregistry.impl.persistence.entity.data.impl.MybatisEventResourceDataManager;
+ import org.flowable.eventregistry.impl.pipeline.DelegateExpressionInboundChannelModelProcessor;
+ import org.flowable.eventregistry.impl.pipeline.DelegateExpressionOutboundChannelModelProcessor;
+@@ -113,12 +117,14 @@ public class EventRegistryEngineConfiguration extends AbstractBuildableEngineCon
+     protected EventDefinitionDataManager eventDefinitionDataManager;
+     protected ChannelDefinitionDataManager channelDefinitionDataManager;
+     protected EventResourceDataManager resourceDataManager;
++    protected EventInstanceDataManager eventInstanceDataManager;
+ 
+     // ENTITY MANAGERS /////////////////////////////////////////////////
+     protected EventDeploymentEntityManager deploymentEntityManager;
+     protected EventDefinitionEntityManager eventDefinitionEntityManager;
+     protected ChannelDefinitionEntityManager channelDefinitionEntityManager;
+     protected EventResourceEntityManager resourceEntityManager;
++    protected EventInstanceEntityManager eventInstanceEntityManager;
+ 
+     protected ExpressionManager expressionManager;
+     protected Collection<Consumer<ExpressionManager>> expressionManagerConfigurers;
+@@ -319,6 +325,9 @@ public class EventRegistryEngineConfiguration extends AbstractBuildableEngineCon
+         if (resourceDataManager == null) {
+             resourceDataManager = new MybatisEventResourceDataManager(this);
+         }
++        if (eventInstanceDataManager == null) {
++            eventInstanceDataManager = new MybatisEventInstanceDataManager(this);
++        }
+     }
+ 
+     @Override
+@@ -336,6 +345,9 @@ public class EventRegistryEngineConfiguration extends AbstractBuildableEngineCon
+         if (resourceEntityManager == null) {
+             resourceEntityManager = new EventResourceEntityManagerImpl(this, resourceDataManager);
+         }
++        if (eventInstanceEntityManager == null) {
++            eventInstanceEntityManager = new EventInstanceEntityManagerImpl(this, eventInstanceDataManager);
++        }
+     }
+ 
+     // data model ///////////////////////////////////////////////////////////////
+@@ -865,6 +877,15 @@ public class EventRegistryEngineConfiguration extends AbstractBuildableEngineCon
+         return this;
+     }
+ 
++    public EventInstanceDataManager getEventInstanceDataManager() {
++        return eventInstanceDataManager;
++    }
++
++    public EventRegistryEngineConfiguration setEventInstanceDataManager(EventInstanceDataManager eventInstanceDataManager) {
++        this.eventInstanceDataManager = eventInstanceDataManager;
++        return this;
++    }
++
+     public EventDeploymentEntityManager getDeploymentEntityManager() {
+         return deploymentEntityManager;
+     }
+@@ -901,6 +922,15 @@ public class EventRegistryEngineConfiguration extends AbstractBuildableEngineCon
+         return this;
+     }
+ 
++    public EventInstanceEntityManager getEventInstanceEntityManager() {
++        return eventInstanceEntityManager;
++    }
++
++    public EventRegistryEngineConfiguration setEventInstanceEntityManager(EventInstanceEntityManager eventInstanceEntityManager) {
++        this.eventInstanceEntityManager = eventInstanceEntityManager;
++        return this;
++    }
++
+     @Override
+     public EventRegistryEngineConfiguration setTableDataManager(TableDataManager tableDataManager) {
+         this.tableDataManager = tableDataManager;
+diff --git a/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/db/EntityDependencyOrder.java b/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/db/EntityDependencyOrder.java
+index f12f5f0c22..36f3f0cda5 100644
+--- a/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/db/EntityDependencyOrder.java
++++ b/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/db/EntityDependencyOrder.java
+@@ -21,6 +21,7 @@ import org.flowable.common.engine.impl.persistence.entity.PropertyEntityImpl;
+ import org.flowable.eventregistry.impl.persistence.entity.ChannelDefinitionEntityImpl;
+ import org.flowable.eventregistry.impl.persistence.entity.EventDefinitionEntityImpl;
+ import org.flowable.eventregistry.impl.persistence.entity.EventDeploymentEntityImpl;
++import org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityImpl;
+ import org.flowable.eventregistry.impl.persistence.entity.EventResourceEntityImpl;
+ 
+ public class EntityDependencyOrder {
+@@ -33,6 +34,7 @@ public class EntityDependencyOrder {
+         DELETE_ORDER.add(PropertyEntityImpl.class);
+         DELETE_ORDER.add(EventResourceEntityImpl.class);
+         DELETE_ORDER.add(EventDeploymentEntityImpl.class);
++        DELETE_ORDER.add(EventInstanceEntityImpl.class);
+         DELETE_ORDER.add(EventDefinitionEntityImpl.class);
+         DELETE_ORDER.add(ChannelDefinitionEntityImpl.class);
+         
+diff --git a/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/runtime/EventInstanceImpl.java b/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/runtime/EventInstanceImpl.java
+index 9b0220431b..f062e7c15d 100644
+--- a/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/runtime/EventInstanceImpl.java
++++ b/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/runtime/EventInstanceImpl.java
+@@ -26,6 +26,7 @@ import org.flowable.eventregistry.impl.EventRegistryEngineConfiguration;
+ public class EventInstanceImpl implements EventInstance {
+ 
+     protected String eventKey;
++    protected String eventCategory;
+     protected Collection<EventPayloadInstance> payloadInstances;
+     protected Collection<EventPayloadInstance> headerInstances;
+     protected Collection<EventPayloadInstance> correlationPayloadInstances;
+@@ -56,6 +57,15 @@ public class EventInstanceImpl implements EventInstance {
+         this.eventKey = eventKey;
+     }
+ 
++    @Override
++    public String getEventCategory() {
++        return eventCategory;
++    }
++
++    public void setEventCategory(String eventCategory) {
++        this.eventCategory = eventCategory;
++    }
++
+     @Override
+     public Collection<EventPayloadInstance> getPayloadInstances() {
+         return payloadInstances;
+diff --git a/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/util/CommandContextUtil.java b/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/util/CommandContextUtil.java
+index b9392cf64a..2ae00db440 100644
+--- a/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/util/CommandContextUtil.java
++++ b/modules/flowable-event-registry/src/main/java/org/flowable/eventregistry/impl/util/CommandContextUtil.java
+@@ -22,6 +22,7 @@ import org.flowable.eventregistry.impl.EventRegistryEngineConfiguration;
+ import org.flowable.eventregistry.impl.persistence.entity.ChannelDefinitionEntityManager;
+ import org.flowable.eventregistry.impl.persistence.entity.EventDefinitionEntityManager;
+ import org.flowable.eventregistry.impl.persistence.entity.EventDeploymentEntityManager;
++import org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityManager;
+ import org.flowable.eventregistry.impl.persistence.entity.EventResourceEntityManager;
+ 
+ public class CommandContextUtil {
+@@ -81,6 +82,14 @@ public class CommandContextUtil {
+         return getEventRegistryConfiguration(commandContext).getChannelDefinitionEntityManager();
+     }
+     
++    public static EventInstanceEntityManager getEventInstanceEntityManager() {
++        return getEventInstanceEntityManager(getCommandContext());
++    }
++    
++    public static EventInstanceEntityManager getEventInstanceEntityManager(CommandContext commandContext) {
++        return getEventRegistryConfiguration(commandContext).getEventInstanceEntityManager();
++    }
++    
+     public static TableDataManager getTableDataManager() {
+         return getTableDataManager(getCommandContext());
+     }
+diff --git a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.db2.create.eventregistry.sql b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.db2.create.eventregistry.sql
+index b96058c595..5528f391af 100644
+--- a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.db2.create.eventregistry.sql
++++ b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.db2.create.eventregistry.sql
+@@ -15,5 +15,7 @@ CREATE TABLE FLW_CHANNEL_DEFINITION (ID_ VARCHAR(255) NOT NULL, NAME_ VARCHAR(25
+ 
+ CREATE UNIQUE INDEX ACT_IDX_CHANNEL_DEF_UNIQ ON FLW_CHANNEL_DEFINITION(KEY_, VERSION_, TENANT_ID_);
+ 
++CREATE TABLE FLW_EVENT_INSTANCE (ID_ VARCHAR(255) NOT NULL, EVENT_KEY_ VARCHAR(255), CATEGORY_ VARCHAR(255), EVENT_DEFINITION_KEY_ VARCHAR(255), TENANT_ID_ VARCHAR(255), CONSTRAINT PK_FLW_EVENT_INST PRIMARY KEY (ID_));
++
+ insert into ACT_GE_PROPERTY
+ values ('eventregistry.schema.version', '8.1.0.1', 1);
+diff --git a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.h2.create.eventregistry.sql b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.h2.create.eventregistry.sql
+index f0dea06ba2..b78b3daf2e 100644
+--- a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.h2.create.eventregistry.sql
++++ b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.h2.create.eventregistry.sql
+@@ -15,5 +15,7 @@ CREATE TABLE FLW_CHANNEL_DEFINITION (ID_ VARCHAR(255) NOT NULL, NAME_ VARCHAR(25
+ 
+ CREATE UNIQUE INDEX ACT_IDX_CHANNEL_DEF_UNIQ ON FLW_CHANNEL_DEFINITION(KEY_, VERSION_, TENANT_ID_);
+ 
++CREATE TABLE FLW_EVENT_INSTANCE (ID_ VARCHAR(255) NOT NULL, EVENT_KEY_ VARCHAR(255), CATEGORY_ VARCHAR(255), EVENT_DEFINITION_KEY_ VARCHAR(255), TENANT_ID_ VARCHAR(255), CONSTRAINT PK_FLW_EVENT_INSTANCE PRIMARY KEY (ID_));
++
+ insert into ACT_GE_PROPERTY
+ values ('eventregistry.schema.version', '8.1.0.1', 1);
+diff --git a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.mssql.create.eventregistry.sql b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.mssql.create.eventregistry.sql
+index 1986b08b2d..7959be51e4 100644
+--- a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.mssql.create.eventregistry.sql
++++ b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.mssql.create.eventregistry.sql
+@@ -15,5 +15,7 @@ CREATE TABLE FLW_CHANNEL_DEFINITION (ID_ varchar(255) NOT NULL, NAME_ nvarchar(2
+ 
+ CREATE UNIQUE NONCLUSTERED INDEX ACT_IDX_CHANNEL_DEF_UNIQ ON FLW_CHANNEL_DEFINITION(KEY_, VERSION_, TENANT_ID_);
+ 
++CREATE TABLE FLW_EVENT_INSTANCE (ID_ varchar(255) NOT NULL, EVENT_KEY_ varchar(255), CATEGORY_ nvarchar(255), EVENT_DEFINITION_KEY_ varchar(255), TENANT_ID_ varchar(255), CONSTRAINT PK_FLW_EVENT_INSTANCE PRIMARY KEY (ID_));
++
+ insert into ACT_GE_PROPERTY
+ values ('eventregistry.schema.version', '8.1.0.1', 1);
+diff --git a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.mysql.create.eventregistry.sql b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.mysql.create.eventregistry.sql
+index ce32fe0328..88fc41e8c0 100644
+--- a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.mysql.create.eventregistry.sql
++++ b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.mysql.create.eventregistry.sql
+@@ -15,5 +15,7 @@ CREATE TABLE FLW_CHANNEL_DEFINITION (ID_ VARCHAR(255) NOT NULL, NAME_ VARCHAR(25
+ 
+ CREATE UNIQUE INDEX ACT_IDX_CHANNEL_DEF_UNIQ ON FLW_CHANNEL_DEFINITION(KEY_, VERSION_, TENANT_ID_);
+ 
++CREATE TABLE FLW_EVENT_INSTANCE (ID_ VARCHAR(255) NOT NULL, EVENT_KEY_ VARCHAR(255) NULL, CATEGORY_ VARCHAR(255) NULL, EVENT_DEFINITION_KEY_ VARCHAR(255) NULL, TENANT_ID_ VARCHAR(255) NULL, CONSTRAINT PK_FLW_EVENT_INSTANCE PRIMARY KEY (ID_));
++
+ insert into ACT_GE_PROPERTY
+ values ('eventregistry.schema.version', '8.1.0.1', 1);
+diff --git a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.oracle.create.eventregistry.sql b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.oracle.create.eventregistry.sql
+index bf1aae0d67..85f00dcd7e 100644
+--- a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.oracle.create.eventregistry.sql
++++ b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.oracle.create.eventregistry.sql
+@@ -15,5 +15,7 @@ CREATE TABLE FLW_CHANNEL_DEFINITION (ID_ VARCHAR2(255) NOT NULL, NAME_ VARCHAR2(
+ 
+ CREATE UNIQUE INDEX ACT_IDX_CHANNEL_DEF_UNIQ ON FLW_CHANNEL_DEFINITION(KEY_, VERSION_, TENANT_ID_);
+ 
++CREATE TABLE FLW_EVENT_INSTANCE (ID_ VARCHAR2(255) NOT NULL, EVENT_KEY_ VARCHAR2(255), CATEGORY_ VARCHAR2(255), EVENT_DEFINITION_KEY_ VARCHAR2(255), TENANT_ID_ VARCHAR2(255), CONSTRAINT PK_FLW_EVENT_INSTANCE PRIMARY KEY (ID_));
++
+ insert into ACT_GE_PROPERTY
+ values ('eventregistry.schema.version', '8.1.0.1', 1);
+diff --git a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.postgres.create.eventregistry.sql b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.postgres.create.eventregistry.sql
+index d9dbc81a52..4f990cc5fb 100644
+--- a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.postgres.create.eventregistry.sql
++++ b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/create/flowable.postgres.create.eventregistry.sql
+@@ -15,5 +15,7 @@ CREATE TABLE FLW_CHANNEL_DEFINITION (ID_ VARCHAR(255) NOT NULL, NAME_ VARCHAR(25
+ 
+ CREATE UNIQUE INDEX ACT_IDX_CHANNEL_DEF_UNIQ ON FLW_CHANNEL_DEFINITION(KEY_, VERSION_, TENANT_ID_);
+ 
++CREATE TABLE FLW_EVENT_INSTANCE (ID_ VARCHAR(255) NOT NULL, EVENT_KEY_ VARCHAR(255), CATEGORY_ VARCHAR(255), EVENT_DEFINITION_KEY_ VARCHAR(255), TENANT_ID_ VARCHAR(255), CONSTRAINT "FLW_EVENT_INSTANCE_pkey" PRIMARY KEY (ID_));
++
+ insert into ACT_GE_PROPERTY
+ values ('eventregistry.schema.version', '8.1.0.1', 1);
+diff --git a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/mapping/mappings.xml b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/mapping/mappings.xml
+index afd26fcafe..97c0210b64 100644
+--- a/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/mapping/mappings.xml
++++ b/modules/flowable-event-registry/src/main/resources/org/flowable/eventregistry/db/mapping/mappings.xml
+@@ -25,5 +25,6 @@
+     <mapper resource="org/flowable/eventregistry/db/mapping/entity/EventDefinition.xml" />
+     <mapper resource="org/flowable/eventregistry/db/mapping/entity/ChannelDefinition.xml" />
+     <mapper resource="org/flowable/eventregistry/db/mapping/entity/EventResource.xml" />
++    <mapper resource="org/flowable/eventregistry/db/mapping/entity/EventInstance.xml" />
+   </mappers>
+ </configuration>

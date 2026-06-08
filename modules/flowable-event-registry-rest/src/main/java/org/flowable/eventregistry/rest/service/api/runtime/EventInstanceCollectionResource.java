@@ -13,14 +13,23 @@
 
 package org.flowable.eventregistry.rest.service.api.runtime;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
+
 import org.apache.commons.lang3.StringUtils;
 import org.flowable.common.engine.api.FlowableIllegalArgumentException;
 import org.flowable.common.engine.api.FlowableObjectNotFoundException;
 import org.flowable.common.engine.api.scope.ScopeTypes;
 import org.flowable.eventregistry.api.EventDefinition;
 import org.flowable.eventregistry.api.EventDefinitionQuery;
+import org.flowable.eventregistry.api.EventManagementService;
 import org.flowable.eventregistry.api.EventRegistry;
 import org.flowable.eventregistry.api.EventRepositoryService;
+import org.flowable.eventregistry.api.runtime.EventInstance;
+import org.flowable.eventregistry.api.runtime.EventInstanceQuery;
 import org.flowable.eventregistry.impl.EventRegistryEngineConfiguration;
 import org.flowable.eventregistry.model.ChannelModel;
 import org.flowable.eventregistry.model.InboundChannelModel;
@@ -28,8 +37,10 @@ import org.flowable.eventregistry.rest.service.api.EventRegistryRestApiIntercept
 import org.flowable.eventregistry.rest.service.api.EventRegistryRestResponseFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -60,6 +71,9 @@ public class EventInstanceCollectionResource {
 
     @Autowired(required=false)
     protected EventRegistryRestApiInterceptor restApiInterceptor;
+
+    @Autowired
+    protected EventManagementService managementService;
 
     @ApiOperation(value = "Send an event instance", tags = { "Event Instances" },
             notes = "Only one of *eventDefinitionId* or *eventDefinitionKey* an be used in the request body. \n\n",
@@ -136,4 +150,46 @@ public class EventInstanceCollectionResource {
             throw new FlowableIllegalArgumentException("Only one of eventDefinitionId or eventDefinitionKey should be set.");
         }
     }
+
+    @ApiOperation(value = "List event instances", tags = { "Event Instances" },
+            notes = "Returns a list of event instances matching the given query parameters. Supports filtering by eventCategory.")
+    @GetMapping(value = "/event-registry-runtime/event-instances", produces = "application/json")
+    public List<EventInstance> getEventInstances(@RequestParam Map<String, String> requestParams, HttpServletRequest httpRequest) {
+        EventInstanceQuery query = managementService.createEventInstanceQuery();
+
+        if (requestParams.containsKey("eventInstanceId")) {
+            query.eventInstanceId(requestParams.get("eventInstanceId"));
+        }
+        if (requestParams.containsKey("eventKey")) {
+            query.eventKey(requestParams.get("eventKey"));
+        }
+        if (requestParams.containsKey("eventKeyLike")) {
+            query.eventKeyLike(requestParams.get("eventKeyLike"));
+        }
+        if (requestParams.containsKey("eventDefinitionKey")) {
+            query.eventDefinitionKey(requestParams.get("eventDefinitionKey"));
+        }
+        if (requestParams.containsKey("eventCategory")) {
+            query.eventCategory(requestParams.get("eventCategory"));
+        }
+        if (requestParams.containsKey("eventCategoryLike")) {
+            query.eventCategoryLike(requestParams.get("eventCategoryLike"));
+        }
+        if (requestParams.containsKey("eventCategoryNotEquals")) {
+            query.eventCategoryNotEquals(requestParams.get("eventCategoryNotEquals"));
+        }
+        if (requestParams.containsKey("tenantId")) {
+            query.tenantId(requestParams.get("tenantId"));
+        }
+        if (requestParams.containsKey("tenantIdLike")) {
+            query.tenantIdLike(requestParams.get("tenantIdLike"));
+        }
+
+        if (restApiInterceptor != null) {
+            restApiInterceptor.accessEventInstancesWithQuery(query);
+        }
+
+        return query.list();
+    }
+
 }

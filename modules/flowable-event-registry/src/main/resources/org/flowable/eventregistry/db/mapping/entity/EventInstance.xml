@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?> 
+
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd"> 
+  
+<mapper namespace="org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityImpl">
+  
+  <insert id="insertEventInstance" parameterType="org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityImpl">
+    insert into ${prefix}FLW_EVENT_INSTANCE(ID_, EVENT_KEY_, CATEGORY_, EVENT_DEFINITION_KEY_, TENANT_ID_)
+    values (#{id, jdbcType=VARCHAR},
+            #{eventKey, jdbcType=VARCHAR},
+            #{eventCategory, jdbcType=NVARCHAR},
+            #{eventDefinitionKey, jdbcType=VARCHAR},
+            #{tenantId, jdbcType=VARCHAR})
+  </insert>
+  
+  <update id="updateEventInstance" parameterType="org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityImpl">
+    update ${prefix}FLW_EVENT_INSTANCE
+    <set>
+        CATEGORY_ = #{eventCategory, jdbcType=NVARCHAR},
+    </set>
+    where ID_ = #{id, jdbcType=VARCHAR}
+  </update>
+  
+  <delete id="deleteEventInstance" parameterType="org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityImpl">
+    delete from ${prefix}FLW_EVENT_INSTANCE where ID_ = #{id, jdbcType=VARCHAR}
+  </delete>
+  
+  <resultMap id="eventInstanceResultMap" type="org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityImpl">
+    <id property="id" column="ID_" jdbcType="VARCHAR" />
+    <result property="eventKey" column="EVENT_KEY_" jdbcType="VARCHAR" />
+    <result property="eventCategory" column="CATEGORY_" jdbcType="NVARCHAR" />
+    <result property="eventDefinitionKey" column="EVENT_DEFINITION_KEY_" jdbcType="VARCHAR" />
+    <result property="tenantId" column="TENANT_ID_" jdbcType="VARCHAR" />
+  </resultMap>
+
+  <select id="selectEventInstance" parameterType="string" resultMap="eventInstanceResultMap">
+    select * from ${prefix}FLW_EVENT_INSTANCE where ID_ = #{id, jdbcType=VARCHAR}
+  </select>
+
+  <select id="selectEventInstancesByQueryCriteria" parameterType="org.flowable.eventregistry.impl.EventInstanceQueryImpl" resultMap="eventInstanceResultMap">
+    <if test="needsPaging">${limitBefore}</if>
+    SELECT RES.* <if test="needsPaging">${limitBetween}</if>
+    <include refid="selectEventInstancesByQueryCriteriaSql"/>
+    ${orderBy}
+    <if test="needsPaging">${limitAfter}</if>
+  </select>
+
+  <select id="selectEventInstanceCountByQueryCriteria" parameterType="org.flowable.eventregistry.impl.EventInstanceQueryImpl" resultType="long">
+    select count(RES.ID_)
+    <include refid="selectEventInstancesByQueryCriteriaSql"/>
+  </select>
+  
+  <sql id="selectEventInstancesByQueryCriteriaSql">  
+    from ${prefix}FLW_EVENT_INSTANCE RES
+    <where>
+      <if test="id != null">
+        RES.ID_ = #{id, jdbcType=VARCHAR}
+      </if>
+      <if test="eventKey != null">
+        and RES.EVENT_KEY_ = #{eventKey, jdbcType=VARCHAR}
+      </if>
+      <if test="eventKeyLike != null">
+        and RES.EVENT_KEY_ like #{eventKeyLike, jdbcType=VARCHAR}
+      </if>
+      <if test="eventKeyLikeIgnoreCase != null">
+        and lower(RES.EVENT_KEY_) like lower(#{eventKeyLikeIgnoreCase, jdbcType=VARCHAR}${wildcardEscapeClause})
+      </if>
+      <if test="eventDefinitionKey != null">
+        and RES.EVENT_DEFINITION_KEY_ = #{eventDefinitionKey, jdbcType=VARCHAR}
+      </if>
+      <if test="eventCategory != null">
+        and RES.CATEGORY_ = #{eventCategory, jdbcType=NVARCHAR}
+      </if>
+      <if test="eventCategoryLike != null">
+        and RES.CATEGORY_ like #{eventCategoryLike, jdbcType=NVARCHAR}
+      </if>
+      <if test="eventCategoryNotEquals != null">
+        and ( RES.CATEGORY_ &lt;&gt; #{eventCategoryNotEquals, jdbcType=NVARCHAR} OR RES.CATEGORY_ is null )
+      </if>
+      <if test="tenantId != null">
+        and RES.TENANT_ID_ = #{tenantId, jdbcType=VARCHAR}
+      </if>
+      <if test="tenantIdLike != null">
+        and RES.TENANT_ID_ like #{tenantIdLike, jdbcType=VARCHAR}
+      </if>
+      <if test="withoutTenantId">
+        and (RES.TENANT_ID_ = '' or RES.TENANT_ID_ is null)
+      </if>
+    </where>
+  </sql>
+
+</mapper>

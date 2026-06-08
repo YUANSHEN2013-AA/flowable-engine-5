@@ -22,6 +22,7 @@ import org.flowable.eventregistry.impl.EventRegistryEngineConfiguration;
 import org.flowable.eventregistry.impl.persistence.entity.ChannelDefinitionEntityManager;
 import org.flowable.eventregistry.impl.persistence.entity.EventDefinitionEntityManager;
 import org.flowable.eventregistry.impl.persistence.entity.EventDeploymentEntityManager;
+import org.flowable.eventregistry.impl.persistence.entity.EventInstanceEntityManager;
 import org.flowable.eventregistry.impl.persistence.entity.EventResourceEntityManager;
 
 public class CommandContextUtil {
@@ -79,6 +80,14 @@ public class CommandContextUtil {
     
     public static ChannelDefinitionEntityManager getChannelDefinitionEntityManager(CommandContext commandContext) {
         return getEventRegistryConfiguration(commandContext).getChannelDefinitionEntityManager();
+    }
+    
+    public static EventInstanceEntityManager getEventInstanceEntityManager() {
+        return getEventInstanceEntityManager(getCommandContext());
+    }
+    
+    public static EventInstanceEntityManager getEventInstanceEntityManager(CommandContext commandContext) {
+        return getEventRegistryConfiguration(commandContext).getEventInstanceEntityManager();
     }
     
     public static TableDataManager getTableDataManager() {
